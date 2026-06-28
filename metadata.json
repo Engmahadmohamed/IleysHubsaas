@@ -1,0 +1,8 @@
+{
+  "name": "IleysHub School Management System",
+  "description": "A production-ready, multi-tenant school management system with isolated data, teacher schedules, student registrations, fee, and exam managers.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
