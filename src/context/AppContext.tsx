@@ -5,7 +5,7 @@ import {
 } from '../types';
 import { db, auth, createSecondaryAuthUser, handleFirestoreError, OperationType } from '../firebase';
 import { 
-  doc, setDoc, updateDoc, deleteDoc, collection, collectionGroup, onSnapshot, getDoc, getDocs, query, where 
+  doc, setDoc, updateDoc, deleteDoc, collection, collectionGroup, onSnapshot, getDoc, getDocs, query, where, limit
 } from 'firebase/firestore';
 import { 
   signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, updatePassword, sendPasswordResetEmail, onAuthStateChanged 
@@ -79,6 +79,7 @@ interface AppContextType {
   changePassword: (newPassword: string) => Promise<void>;
   sendPasswordReset: (email: string) => Promise<void>;
   updateUserProfile: (uid: string, updates: Partial<UserProfile>) => Promise<void>;
+  deleteStaffMember: (uid: string) => Promise<void>;
 
   // Core Operations
   addOrganization: (org: Omit<Organization, 'id' | 'createdAt'>, adminPassword?: string) => Promise<void>;
@@ -118,6 +119,7 @@ interface AppContextType {
   submitMarks: (examId: string, results: any[], average: number) => void;
   approveExamResults: (examId: string) => void;
   searchStudentResults: (studentId: string) => Promise<{ student: Student; results: any[]; subjects: Subject[] } | null>;
+  searchStudentFees: (studentId: string, orgId: string) => Promise<{ student: Student; fees: FeeRecord[] } | null>;
   selectActiveOrg: (org: Organization | null) => void;
   seedSampleData: () => Promise<void>;
 }
@@ -721,7 +723,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       organizationId: profile.organizationId || '',
       password: pass,
       active: true,
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
+      // Include optional fields if provided
+      ...(profile.staffDesignation ? { staffDesignation: profile.staffDesignation } : {}),
+      ...(profile.permissions ? { permissions: profile.permissions } : {}),
     };
 
     try {
@@ -793,6 +798,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     } catch (err: any) {
       console.error('Failed to update user profile:', err);
       throw new Error(err.message || 'Ku guuldareystay bedelaada xogta.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const deleteStaffMember = async (uid: string): Promise<void> => {
+    setLoading(true);
+    try {
+      if (db) {
+        await deleteDoc(doc(db, 'users', uid));
+        setUsers(prev => prev.filter(u => u.uid !== uid));
+        console.log('Successfully deleted staff member:', uid);
+      } else {
+        setUsers(prev => prev.filter(u => u.uid !== uid));
+      }
+    } catch (err: any) {
+      console.error('Failed to delete staff member:', err);
+      throw new Error(err.message || 'Ku guuldareystay tirtirida staff-ka.');
     } finally {
       setLoading(false);
     }
@@ -1512,6 +1535,50 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   // Secure on-demand Student Transcript search for the Public Portal
+  const searchStudentFees = async (studentId: string, orgId: string): Promise<{ student: Student; fees: FeeRecord[] } | null> => {
+    try {
+      setLoading(true);
+      setError(null);
+      const cleanId = studentId.trim().toUpperCase();
+      
+      const studentsQuery = query(
+        collectionGroup(db, 'students'),
+        where('studentId', '==', cleanId),
+        where('organizationId', '==', orgId),
+        limit(1)
+      );
+      
+      const studentSnap = await getDocs(studentsQuery);
+      if (studentSnap.empty) {
+        return null;
+      }
+      
+      const studentDoc = studentSnap.docs[0];
+      const student = { ...studentDoc.data(), id: studentDoc.id } as Student;
+      
+      const feesQuery = query(
+        collection(db, 'organizations', orgId, 'fees'),
+        where('studentId', '==', student.id)
+      );
+      const feesSnap = await getDocs(feesQuery);
+      const feesList: FeeRecord[] = [];
+      feesSnap.forEach((doc) => {
+        feesList.push({ ...doc.data(), id: doc.id } as FeeRecord);
+      });
+      
+      // Sort fees by month/year descending
+      feesList.sort((a, b) => new Date(b.year, b.month - 1).getTime() - new Date(a.year, a.month - 1).getTime());
+      
+      return { student, fees: feesList };
+    } catch (err: any) {
+      console.error('Error fetching student fees:', err);
+      handleFirestoreError(err, OperationType.LIST, 'student_fees');
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const searchStudentResults = async (studentId: string): Promise<{ student: Student; results: any[]; subjects: Subject[] } | null> => {
     try {
       setLoading(true);
@@ -1520,7 +1587,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       
       const studentsQuery = query(
         collectionGroup(db, 'students'),
-        where('studentId', '==', cleanId)
+        where('studentId', '==', cleanId),
+        limit(1)
       );
       
       const studentSnap = await getDocs(studentsQuery);
@@ -1797,6 +1865,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       changePassword,
       sendPasswordReset,
       updateUserProfile,
+      deleteStaffMember,
       addOrganization,
       updateOrganization,
       deleteOrganization,

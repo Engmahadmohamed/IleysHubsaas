@@ -1,0 +1,41 @@
+{
+  "sidebar": {
+    "dashboard": "Dashboard",
+    "students": "Students",
+    "teachers": "Teachers",
+    "subjects": "Subjects",
+    "classes": "Classes & Rooms",
+    "attendance": "Attendance",
+    "fees": "Tuition Fees",
+    "salary": "Teacher Salary",
+    "exams": "Examinations",
+    "reports": "Reports",
+    "staff": "Staff Management",
+    "settings": "Settings",
+    "support": "Support & Help",
+    "logout": "Logout"
+  },
+  "header": {
+    "welcome": "Welcome back",
+    "schoolAdmin": "School Admin",
+    "search": "Search..."
+  },
+  "dashboard": {
+    "totalStudents": "Total Students",
+    "totalTeachers": "Total Teachers",
+    "activeClasses": "Active Classes",
+    "todayAttendance": "Today's Attendance",
+    "recentActivity": "Recent Activity",
+    "quickActions": "Quick Actions"
+  },
+  "common": {
+    "add": "Add New",
+    "edit": "Edit",
+    "delete": "Delete",
+    "save": "Save Changes",
+    "cancel": "Cancel",
+    "search": "Search",
+    "status": "Status",
+    "action": "Actions"
+  }
+}

@@ -17,8 +17,11 @@ import { jsPDF } from 'jspdf';
 import StudentDetail from './StudentDetail';
 import TeacherDetail from './TeacherDetail';
 import SubjectDetail from './SubjectDetail';
+import LanguageSwitcher from './LanguageSwitcher';
+import { useTranslation } from 'react-i18next';
 
 export default function SchoolAdmin() {
+  const { t } = useTranslation();
   const { showAlert, showConfirm } = useAlert();
   const WEEK_DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
   const { 
@@ -31,7 +34,7 @@ export default function SchoolAdmin() {
     addRoom, updateRoom, deleteRoom,
     saveAttendance, approveFeePayment, updateFeePaymentStatus, addFeePayment, approveSalaryPayment,
     createExam, updateExam, deleteExam, submitMarks, approveExamResults, logout, changePassword, sendPasswordReset,
-    updateUserProfile, registerUser, selectActiveOrg
+    updateUserProfile, registerUser, deleteStaffMember, selectActiveOrg
   } = useApp();
 
   const isQuranSchool = currentOrg?.type === 'quran' || currentUser?.role === 'quranadmin';
@@ -43,8 +46,16 @@ export default function SchoolAdmin() {
   const location = useLocation();
 
   const isStaff = currentUser?.role === 'schoolstaff';
+  
+  const hasPermission = (permissionKey: string) => {
+    if (currentUser?.role === 'schooladmin' || currentUser?.role === 'quranadmin' || currentUser?.role === 'superadmin') return true;
+    if (isStaff) {
+      return currentUser?.permissions?.includes(permissionKey) || false;
+    }
+    return false;
+  };
 
-  const activeTab = (tab || (isStaff ? 'students' : 'dashboard')) as 'dashboard' | 'students' | 'teachers' | 'subjects' | 'class-sessions' | 'rooms' | 'attendance' | 'fees' | 'salaries' | 'exams' | 'reports' | 'settings';
+  const activeTab = (tab || (isStaff ? 'students' : 'dashboard')) as 'dashboard' | 'students' | 'teachers' | 'subjects' | 'class-sessions' | 'rooms' | 'attendance' | 'fees' | 'salaries' | 'exams' | 'reports' | 'staff' | 'settings';
 
   const setActiveTab = (newTab: string) => {
     navigate(`/portal/${newTab}`);
@@ -113,9 +124,30 @@ export default function SchoolAdmin() {
   const [staffEmail, setStaffEmail] = useState('');
   const [staffPassword, setStaffPassword] = useState('');
   const [staffDesignation, setStaffDesignation] = useState('');
+  const [staffPermissions, setStaffPermissions] = useState<string[]>([
+    'Dashboard', 'Students', 'Teachers', 'Attendance', 'Fees', 'Exams', 'Reports'
+  ]); // Default subset
   const [staffLoading, setStaffLoading] = useState(false);
   const [staffError, setStaffError] = useState<string | null>(null);
   const [staffSuccess, setStaffSuccess] = useState<string | null>(null);
+
+  const toggleStaffPermission = (key: string) => {
+    setStaffPermissions(prev => prev.includes(key) ? prev.filter(p => p !== key) : [...prev, key]);
+  };
+
+  const ALL_PERMISSIONS = [
+    { key: 'Dashboard',       label: 'Dashboard' },
+    { key: 'Students',        label: 'Students' },
+    { key: 'Teachers',        label: 'Teachers' },
+    { key: 'Subjects',        label: 'Subjects' },
+    { key: 'Class Sessions',  label: 'Class Sessions' },
+    { key: 'Class Rooms',     label: 'Class Rooms' },
+    { key: 'Attendance',      label: 'Attendance (Xaadirinta)' },
+    { key: 'Fees',            label: 'Student Fees' },
+    { key: 'Teacher Salary',  label: 'Teacher Salary' },
+    { key: 'Exams',           label: 'Examinations' },
+    { key: 'Reports',         label: 'Reports / PDF Exports' },
+  ];
 
   useEffect(() => {
     if (currentUser?.fullName) {
@@ -441,6 +473,7 @@ export default function SchoolAdmin() {
         role: 'schoolstaff',
         organizationId: orgId,
         staffDesignation: staffDesignation,
+        permissions: staffPermissions,
         active: true
       });
 
@@ -449,6 +482,7 @@ export default function SchoolAdmin() {
       setStaffEmail('');
       setStaffPassword('');
       setStaffDesignation('');
+      setStaffPermissions(['Students', 'Teachers', 'Attendance', 'Exams', 'Fees', 'Edit Students', 'Import Excel', 'Print Reports']);
     } catch (err: any) {
       console.error('Error registering staff:', err);
       setStaffError(err.message || 'Ku guuldareystay diiwaan gelinta staff-ka.');
@@ -468,6 +502,50 @@ export default function SchoolAdmin() {
       setStaffError(err.message || 'Ku guuldareystay bedelaada xaalada staff-ka.');
     }
   };
+
+  const [staffDeleteConfirm, setStaffDeleteConfirm] = useState<{ uid: string; name: string } | null>(null);
+
+  const handleDeleteStaff = async () => {
+    if (!staffDeleteConfirm) return;
+    setStaffError(null);
+    setStaffSuccess(null);
+    try {
+      await deleteStaffMember(staffDeleteConfirm.uid);
+      setStaffSuccess('Staff-ka si guul leh ayaa loo tirtiray!');
+      setStaffDeleteConfirm(null);
+    } catch (err: any) {
+      console.error('Failed to delete staff member:', err);
+      setStaffError(err.message || 'Ku guuldareystay tirtirida staff-ka.');
+    }
+  };
+
+  // Edit Permissions Modal State
+  const [editingStaff, setEditingStaff] = useState<{ uid: string; name: string; permissions: string[] } | null>(null);
+  const [editPerms, setEditPerms] = useState<string[]>([]);
+
+  const openEditPermissions = (staff: { uid: string; fullName: string; permissions?: string[] }) => {
+    setEditingStaff({ uid: staff.uid, name: staff.fullName, permissions: staff.permissions || [] });
+    setEditPerms(staff.permissions || []);
+  };
+
+  const toggleEditPerm = (key: string) => {
+    setEditPerms(prev => prev.includes(key) ? prev.filter(p => p !== key) : [...prev, key]);
+  };
+
+  const handleSaveStaffPermissions = async () => {
+    if (!editingStaff) return;
+    setStaffError(null);
+    setStaffSuccess(null);
+    try {
+      await updateUserProfile(editingStaff.uid, { permissions: editPerms });
+      setStaffSuccess(`${editingStaff.name} permissions-koodii si guul leh ayaa loo cusboonaysiiyay!`);
+      setEditingStaff(null);
+    } catch (err: any) {
+      console.error('Failed to update staff permissions:', err);
+      setStaffError(err.message || 'Ku guuldareystay cusboonaysiinta permissions-ka.');
+    }
+  };
+
 
   // Actions
   const handleAddStudentSubmit = (e: React.FormEvent) => {
@@ -2702,7 +2780,7 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
           <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-3 mb-2">
             {isTeacher ? 'Teacher Portal' : 'Management Modules'}
           </p>
-          {!isStaff && (
+          {hasPermission('Dashboard') && (
             <NavLink 
               to="/portal/dashboard"
               onClick={() => setIsMobileMenuOpen(false)}
@@ -2713,14 +2791,16 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
           )}
           {!isTeacher && (
             <>
-              <NavLink 
-                to="/portal/students"
-                onClick={() => setIsMobileMenuOpen(false)}
-                className={({ isActive }) => `w-full flex items-center gap-2.5 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all cursor-pointer ${isActive || location.pathname.includes('/portal/students/') ? 'active-nav' : 'text-slate-600 hover:bg-slate-50 sidebar-item'}`}
-              >
-                <GraduationCap size={18} /> Students ({totalStudents})
-              </NavLink>
-              {!isStaff && !quranModeWithoutTeachers && (
+              {hasPermission('Students') && (
+                <NavLink 
+                  to="/portal/students"
+                  onClick={() => setIsMobileMenuOpen(false)}
+                  className={({ isActive }) => `w-full flex items-center gap-2.5 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all cursor-pointer ${isActive || location.pathname.includes('/portal/students/') ? 'active-nav' : 'text-slate-600 hover:bg-slate-50 sidebar-item'}`}
+                >
+                  <GraduationCap size={18} /> Students ({totalStudents})
+                </NavLink>
+              )}
+              {hasPermission('Teachers') && !quranModeWithoutTeachers && (
                 <NavLink 
                   to="/portal/teachers"
                   onClick={() => setIsMobileMenuOpen(false)}
@@ -2729,42 +2809,50 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                   <Users size={18} /> Teachers ({totalTeachers})
                 </NavLink>
               )}
-              <NavLink 
-                to="/portal/subjects"
-                onClick={() => setIsMobileMenuOpen(false)}
-                className={({ isActive }) => `w-full flex items-center gap-2.5 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all cursor-pointer ${isActive || location.pathname.includes('/portal/subjects/') ? 'active-nav' : 'text-slate-600 hover:bg-slate-50 sidebar-item'}`}
-              >
-                <BookOpen size={18} /> Subjects ({totalSubjects})
-              </NavLink>
-              <NavLink 
-                to="/portal/class-sessions"
-                onClick={() => setIsMobileMenuOpen(false)}
-                className={({ isActive }) => `w-full flex items-center gap-2.5 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all cursor-pointer ${isActive || location.pathname.includes('/portal/class-sessions/') ? 'active-nav' : 'text-slate-600 hover:bg-slate-50 sidebar-item'}`}
-              >
-                <Clock size={18} /> Class Sessions ({orgClassSessions.length})
-              </NavLink>
-              <NavLink 
-                to="/portal/rooms"
-                onClick={() => setIsMobileMenuOpen(false)}
-                className={({ isActive }) => `w-full flex items-center gap-2.5 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all cursor-pointer ${isActive ? 'active-nav' : 'text-slate-600 hover:bg-slate-50 sidebar-item'}`}
-              >
-                <School size={18} /> Class Rooms
-              </NavLink>
-              <NavLink 
-                to="/portal/attendance"
-                onClick={() => { setAttendanceSubTab('take'); setIsMobileMenuOpen(false); }}
-                className={({ isActive }) => `w-full flex items-center gap-2.5 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all cursor-pointer ${isActive ? 'active-nav' : 'text-slate-600 hover:bg-slate-50 sidebar-item'}`}
-              >
-                <Calendar size={18} /> Attendance (Xaadirinta)
-              </NavLink>
-              <NavLink 
-                to="/portal/fees"
-                onClick={() => setIsMobileMenuOpen(false)}
-                className={({ isActive }) => `w-full flex items-center gap-2.5 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all cursor-pointer ${isActive ? 'active-nav' : 'text-slate-600 hover:bg-slate-50 sidebar-item'}`}
-              >
-                <DollarSign size={18} /> Student Fees
-              </NavLink>
-              {!isStaff && !quranModeWithoutTeachers && (
+              {hasPermission('School Settings') && (
+                <>
+                  <NavLink 
+                    to="/portal/subjects"
+                    onClick={() => setIsMobileMenuOpen(false)}
+                    className={({ isActive }) => `w-full flex items-center gap-2.5 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all cursor-pointer ${isActive || location.pathname.includes('/portal/subjects/') ? 'active-nav' : 'text-slate-600 hover:bg-slate-50 sidebar-item'}`}
+                  >
+                    <BookOpen size={18} /> Subjects ({totalSubjects})
+                  </NavLink>
+                  <NavLink 
+                    to="/portal/class-sessions"
+                    onClick={() => setIsMobileMenuOpen(false)}
+                    className={({ isActive }) => `w-full flex items-center gap-2.5 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all cursor-pointer ${isActive || location.pathname.includes('/portal/class-sessions/') ? 'active-nav' : 'text-slate-600 hover:bg-slate-50 sidebar-item'}`}
+                  >
+                    <Clock size={18} /> Class Sessions ({orgClassSessions.length})
+                  </NavLink>
+                  <NavLink 
+                    to="/portal/rooms"
+                    onClick={() => setIsMobileMenuOpen(false)}
+                    className={({ isActive }) => `w-full flex items-center gap-2.5 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all cursor-pointer ${isActive ? 'active-nav' : 'text-slate-600 hover:bg-slate-50 sidebar-item'}`}
+                  >
+                    <School size={18} /> Class Rooms
+                  </NavLink>
+                </>
+              )}
+              {hasPermission('Attendance') && (
+                <NavLink 
+                  to="/portal/attendance"
+                  onClick={() => { setAttendanceSubTab('take'); setIsMobileMenuOpen(false); }}
+                  className={({ isActive }) => `w-full flex items-center gap-2.5 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all cursor-pointer ${isActive ? 'active-nav' : 'text-slate-600 hover:bg-slate-50 sidebar-item'}`}
+                >
+                  <Calendar size={18} /> Attendance (Xaadirinta)
+                </NavLink>
+              )}
+              {hasPermission('Fees') && (
+                <NavLink 
+                  to="/portal/fees"
+                  onClick={() => setIsMobileMenuOpen(false)}
+                  className={({ isActive }) => `w-full flex items-center gap-2.5 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all cursor-pointer ${isActive ? 'active-nav' : 'text-slate-600 hover:bg-slate-50 sidebar-item'}`}
+                >
+                  <DollarSign size={18} /> Student Fees
+                </NavLink>
+              )}
+              {hasPermission('Teacher Salary') && !quranModeWithoutTeachers && (
                 <NavLink 
                   to="/portal/salaries"
                   onClick={() => setIsMobileMenuOpen(false)}
@@ -2773,14 +2861,16 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                   <DollarSign size={18} /> Teacher Salary
                 </NavLink>
               )}
-              <NavLink 
-                to="/portal/exams"
-                onClick={() => setIsMobileMenuOpen(false)}
-                className={({ isActive }) => `w-full flex items-center gap-2.5 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all cursor-pointer ${isActive ? 'active-nav' : 'text-slate-600 hover:bg-slate-50 sidebar-item'}`}
-              >
-                <Award size={18} /> Examinations
-              </NavLink>
-              {!isStaff && (
+              {hasPermission('Exams') && (
+                <NavLink 
+                  to="/portal/exams"
+                  onClick={() => setIsMobileMenuOpen(false)}
+                  className={({ isActive }) => `w-full flex items-center gap-2.5 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all cursor-pointer ${isActive ? 'active-nav' : 'text-slate-600 hover:bg-slate-50 sidebar-item'}`}
+                >
+                  <Award size={18} /> Examinations
+                </NavLink>
+              )}
+              {(hasPermission('Print Reports') || hasPermission('View Financial Reports')) && (
                 <NavLink 
                   to="/portal/reports"
                   onClick={() => setIsMobileMenuOpen(false)}
@@ -2789,13 +2879,24 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                   <CheckCircle2 size={18} /> Reports / PDF Exports
                 </NavLink>
               )}
-              <NavLink 
-                to="/portal/settings"
-                onClick={() => setIsMobileMenuOpen(false)}
-                className={({ isActive }) => `w-full flex items-center gap-2.5 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all cursor-pointer ${isActive ? 'active-nav' : 'text-slate-600 hover:bg-slate-50 sidebar-item'}`}
-              >
-                <Settings size={18} /> Settings
-              </NavLink>
+              {hasPermission('User Management') && (
+                <NavLink 
+                  to="/portal/staff"
+                  onClick={() => setIsMobileMenuOpen(false)}
+                  className={({ isActive }) => `w-full flex items-center gap-2.5 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all cursor-pointer ${isActive ? 'active-nav' : 'text-slate-600 hover:bg-slate-50 sidebar-item'}`}
+                >
+                  <Users size={18} /> Staff Management
+                </NavLink>
+              )}
+              {hasPermission('School Settings') && (
+                <NavLink 
+                  to="/portal/settings"
+                  onClick={() => setIsMobileMenuOpen(false)}
+                  className={({ isActive }) => `w-full flex items-center gap-2.5 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all cursor-pointer ${isActive ? 'active-nav' : 'text-slate-600 hover:bg-slate-50 sidebar-item'}`}
+                >
+                  <Settings size={18} /> Settings
+                </NavLink>
+              )}
             </>
           )}
         </aside>
@@ -4345,22 +4446,34 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                   <h2 className="text-xl font-bold tracking-tight text-slate-900">Student Tuition Fees & Collections</h2>
                   <p className="text-xs text-slate-500 mt-1">Sisteemka maamulka lacag bixinta ee bisha barakaysan.</p>
                 </div>
-                <button
-                  onClick={() => {
-                    setPaymentStudentId('');
-                    setPaymentAmount(50);
-                    setPaymentMonth('June 2026');
-                    setActiveModal('receivePayment');
-                  }}
-                  className="flex items-center gap-1.5 bg-black hover:bg-slate-800 text-white font-semibold text-xs px-4 py-2.5 rounded-xl transition-all shadow-sm cursor-pointer"
-                >
-                  <Plus size={15} /> Receive Tuition Payment
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => {
+                      const link = `${window.location.origin}/check-fee/${currentOrg?.id}`;
+                      navigator.clipboard.writeText(link);
+                      alert('Linkiga hubinta lacagta waa la copy-gareeyay: ' + link);
+                    }}
+                    className="flex items-center gap-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-semibold text-xs px-4 py-2.5 rounded-xl transition-all shadow-sm border border-emerald-200 cursor-pointer"
+                  >
+                    <Share2 size={15} /> Copy Checking Link
+                  </button>
+                  <button
+                    onClick={() => {
+                      setPaymentStudentId('');
+                      setPaymentAmount(50);
+                      setPaymentMonth('June 2026');
+                      setActiveModal('receivePayment');
+                    }}
+                    className="flex items-center gap-1.5 bg-black hover:bg-slate-800 text-white font-semibold text-xs px-4 py-2.5 rounded-xl transition-all shadow-sm cursor-pointer"
+                  >
+                    <Plus size={15} /> Receive Tuition Payment
+                  </button>
+                </div>
               </div>
 
               {/* Stat Summaries */}
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                {!isStaff && (
+                {hasPermission('View Total Income') && (
                   <>
                     <div className="bg-white p-4 rounded-2xl border border-gray-100 card-shadow">
                       <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Total Collected</span>
@@ -5043,6 +5156,318 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
             </div>
           )}
 
+          {/* Tab: STAFF MANAGEMENT */}
+          {activeTab === 'staff' && hasPermission('User Management') && (
+            <div className="space-y-6">
+              <div className="flex items-center gap-3 bg-white p-4 rounded-2xl border border-gray-100 card-shadow">
+                <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center text-blue-600">
+                  <Users size={20} />
+                </div>
+                <div>
+                  <h2 className="text-lg font-bold text-slate-900">Staff Management</h2>
+                  <p className="text-xs text-slate-500">Diiwaan geli oo maamul shaqaalaha dugsiga oo leh xuquuq xaddidan</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+                <div className="xl:col-span-1 bg-white p-5 rounded-2xl border border-gray-100 card-shadow space-y-4 h-fit">
+                  <h4 className="text-sm font-bold text-slate-900 border-b border-slate-100 pb-3">Diiwaan Geli Staff Cusub</h4>
+                  
+                  {staffError && (
+                    <div className="p-3 bg-red-50 text-red-700 rounded-xl border border-red-100 text-xs font-semibold">
+                      {staffError}
+                    </div>
+                  )}
+
+                  {staffSuccess && (
+                    <div className="p-3 bg-emerald-50 text-emerald-700 rounded-xl border border-emerald-100 text-xs font-semibold">
+                      {staffSuccess}
+                    </div>
+                  )}
+
+                  <form onSubmit={handleStaffSubmit} className="space-y-4">
+                    <div className="space-y-1.5">
+                      <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Magaca Buuxa (Full Name)</label>
+                      <input 
+                        type="text" 
+                        value={staffName}
+                        onChange={(e) => setStaffName(e.target.value)}
+                        placeholder="Maxamed Cali"
+                        required
+                        className="w-full text-xs px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-black/10 focus:border-black transition-all"
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Email Sax Ah (Email)</label>
+                      <input 
+                        type="email" 
+                        value={staffEmail}
+                        onChange={(e) => setStaffEmail(e.target.value)}
+                        placeholder="staff@dugsi.com"
+                        required
+                        className="w-full text-xs px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-black/10 focus:border-black transition-all"
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Password</label>
+                      <input 
+                        type="password" 
+                        value={staffPassword}
+                        onChange={(e) => setStaffPassword(e.target.value)}
+                        placeholder="Ugu yaraan 6 xaraf"
+                        required
+                        minLength={6}
+                        className="w-full text-xs px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-black/10 focus:border-black transition-all"
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Xilka (Designation)</label>
+                      <input 
+                        type="text" 
+                        value={staffDesignation}
+                        onChange={(e) => setStaffDesignation(e.target.value)}
+                        placeholder="Accountant, Manager..."
+                        required
+                        className="w-full text-xs px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-black/10 focus:border-black transition-all"
+                      />
+                    </div>
+
+                    {/* Permissions Checkboxes */}
+                    <div className="space-y-2 pt-2 border-t border-slate-100 mt-2">
+                      <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block mb-2">Awoodaha (Permissions)</label>
+                      <div className="grid grid-cols-2 gap-2 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
+                        {ALL_PERMISSIONS.map(perm => (
+                          <label key={perm.key} className="flex items-center gap-2.5 p-2 rounded-lg hover:bg-slate-50 border border-transparent hover:border-slate-100 cursor-pointer transition-colors col-span-1">
+                            <input
+                              type="checkbox"
+                              checked={staffPermissions.includes(perm.key)}
+                              onChange={() => toggleStaffPermission(perm.key)}
+                              className="w-4 h-4 rounded border-slate-300 text-black focus:ring-black"
+                            />
+                            <span className="text-[11px] font-semibold text-slate-700">{perm.label}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+
+                    <button 
+                      type="submit"
+                      disabled={staffLoading}
+                      className="w-full text-xs font-semibold bg-black hover:bg-slate-800 text-white py-3 rounded-xl transition-colors cursor-pointer flex items-center justify-center gap-1.5 shadow-sm disabled:bg-slate-400 mt-4"
+                    >
+                      {staffLoading ? <RefreshCw size={14} className="animate-spin" /> : <Plus size={14} />}
+                      <span>Diiwaan Geli Staff-ka</span>
+                    </button>
+                  </form>
+                </div>
+
+                <div className="xl:col-span-2 space-y-4">
+                  <div className="bg-white rounded-2xl border border-gray-100 card-shadow overflow-hidden">
+                    <div className="p-4 border-b border-slate-100 bg-slate-50/50">
+                       <h4 className="text-sm font-bold text-slate-900">Shaqaalaha Diiwaan Gashan (Registered Staff)</h4>
+                    </div>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left text-xs">
+                        <thead>
+                          <tr className="bg-white border-b border-slate-100 text-slate-500 font-bold uppercase tracking-wider">
+                            <th className="p-4">Magaca & Xilka</th>
+                            <th className="p-4">Email</th>
+                            <th className="p-4 hidden sm:table-cell">Awoodaha (Permissions)</th>
+                            <th className="p-4">Xaalada</th>
+                            <th className="p-4 text-right">Waxqabad</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {users.filter(usr => usr.organizationId === orgId && usr.role === 'schoolstaff').length === 0 ? (
+                            <tr>
+                              <td colSpan={5} className="p-8 text-center text-slate-400 font-medium">
+                                Ma jiro wax staff ah oo diiwaan gashan hadda.
+                              </td>
+                            </tr>
+                          ) : (
+                            users.filter(usr => usr.organizationId === orgId && usr.role === 'schoolstaff').map(staff => (
+                              <tr key={staff.uid} className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
+                                <td className="p-4 font-semibold text-slate-800">
+                                  <div>{staff.fullName}</div>
+                                  <div className="text-[10px] text-slate-400 mt-0.5">{staff.staffDesignation || 'Staff'}</div>
+                                </td>
+                                <td className="p-4 text-slate-500">{staff.email}</td>
+                                <td className="p-4 hidden sm:table-cell max-w-[200px]">
+                                  <div className="flex flex-wrap gap-1">
+                                    {staff.permissions?.slice(0, 3).map(p => (
+                                      <span key={p} className="px-1.5 py-0.5 bg-slate-100 text-slate-600 rounded text-[9px] font-bold">{p}</span>
+                                    ))}
+                                    {(staff.permissions?.length || 0) > 3 && (
+                                      <span className="px-1.5 py-0.5 bg-slate-100 text-slate-600 rounded text-[9px] font-bold">+{(staff.permissions?.length || 0) - 3}</span>
+                                    )}
+                                    {(!staff.permissions || staff.permissions.length === 0) && (
+                                      <span className="text-slate-400 italic">No permissions</span>
+                                    )}
+                                  </div>
+                                </td>
+                                <td className="p-4">
+                                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${staff.active !== false ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'}`}>
+                                    {staff.active !== false ? 'Active' : 'Inactive'}
+                                  </span>
+                                </td>
+                                <td className="p-4 text-right">
+                                  <div className="flex items-center justify-end gap-2">
+                                    <button
+                                      onClick={() => openEditPermissions(staff)}
+                                      className="px-2.5 py-1.5 rounded-lg text-[10px] font-bold bg-blue-50 hover:bg-blue-100 text-blue-600 transition-all cursor-pointer"
+                                    >
+                                      Edit
+                                    </button>
+                                    <button
+                                      onClick={() => toggleStaffActive(staff.uid, staff.active !== false)}
+                                      className={`px-2.5 py-1.5 rounded-lg text-[10px] font-bold transition-all cursor-pointer ${
+                                        staff.active !== false 
+                                          ? 'bg-orange-50 hover:bg-orange-100 text-orange-600' 
+                                          : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-600'
+                                      }`}
+                                    >
+                                      {staff.active !== false ? 'Dami' : 'Daar'}
+                                    </button>
+
+                                    <button
+                                      onClick={() => setStaffDeleteConfirm({ uid: staff.uid, name: staff.fullName })}
+                                      className="px-2.5 py-1.5 rounded-lg text-[10px] font-bold bg-red-50 hover:bg-red-100 text-red-600 transition-all cursor-pointer"
+                                    >
+                                      Tirtir
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Edit Permissions Modal */}
+              {editingStaff && (
+                <div className="fixed inset-0 z-[9999] flex items-center justify-center">
+                  <button
+                    type="button"
+                    aria-label="Close"
+                    className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+                    onClick={() => setEditingStaff(null)}
+                  />
+                  <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden border border-slate-200">
+                    {/* Header */}
+                    <div className="bg-slate-900 text-white px-6 py-4">
+                      <h3 className="text-base font-bold">Edit Permissions</h3>
+                      <p className="text-xs text-slate-300 mt-0.5">{editingStaff.name}</p>
+                    </div>
+
+                    {/* Permissions Grid */}
+                    <div className="p-6 space-y-3 max-h-[60vh] overflow-y-auto">
+                      <p className="text-[10px] uppercase tracking-widest font-bold text-slate-400 mb-2">Tick-garee kuwa aad rabto</p>
+                      {ALL_PERMISSIONS.map(perm => (
+                        <label
+                          key={perm.key}
+                          className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all ${
+                            editPerms.includes(perm.key)
+                              ? 'bg-emerald-50 border-emerald-200'
+                              : 'bg-slate-50 border-slate-200 hover:bg-slate-100'
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={editPerms.includes(perm.key)}
+                            onChange={() => toggleEditPerm(perm.key)}
+                            className="w-4 h-4 rounded accent-emerald-600"
+                          />
+                          <span className={`text-sm font-semibold ${editPerms.includes(perm.key) ? 'text-emerald-800' : 'text-slate-600'}`}>
+                            {perm.label}
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+
+                    {/* Footer */}
+                    <div className="flex items-center justify-between gap-3 px-6 py-4 border-t border-slate-100 bg-slate-50">
+                      <span className="text-[10px] font-bold text-slate-400">
+                        {editPerms.length} / {ALL_PERMISSIONS.length} la xushay
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => setEditingStaff(null)}
+                          className="px-4 py-2 rounded-xl text-xs font-bold bg-white border border-slate-200 text-slate-600 hover:bg-slate-100 transition-all cursor-pointer"
+                        >
+                          Ka noqo
+                        </button>
+                        <button
+                          onClick={handleSaveStaffPermissions}
+                          className="px-5 py-2 rounded-xl text-xs font-bold bg-slate-900 text-white hover:bg-slate-800 transition-all cursor-pointer"
+                        >
+                          Kaydi ✓
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Delete Confirmation Popup Modal */}
+              {staffDeleteConfirm && (
+                <div className="fixed inset-0 z-[9999] flex items-center justify-center">
+                  <button
+                    type="button"
+                    aria-label="Close"
+                    className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+                    onClick={() => setStaffDeleteConfirm(null)}
+                  />
+                  <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm mx-4 overflow-hidden border border-red-200">
+                    {/* Icon */}
+                    <div className="flex justify-center pt-8 pb-2">
+                      <div className="w-16 h-16 rounded-full bg-red-100 flex items-center justify-center">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="w-8 h-8 text-red-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M3 6h18"></path>
+                          <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path>
+                          <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path>
+                          <line x1="10" y1="11" x2="10" y2="17"></line>
+                          <line x1="14" y1="11" x2="14" y2="17"></line>
+                        </svg>
+                      </div>
+                    </div>
+
+                    {/* Message */}
+                    <div className="px-6 pb-6 text-center">
+                      <h3 className="text-lg font-bold text-slate-900 mb-2">Ma hubtaa?</h3>
+                      <p className="text-sm text-slate-500">
+                        Ma hubtaa Staff <span className="font-bold text-slate-800">{staffDeleteConfirm.name}</span> inaa delete gareyno?
+                      </p>
+                      <p className="text-xs text-red-400 mt-2">Tallaabadaan dib looma celinayo.</p>
+                    </div>
+
+                    {/* Action Buttons */}
+                    <div className="flex gap-3 px-6 pb-6">
+                      <button
+                        onClick={() => setStaffDeleteConfirm(null)}
+                        className="flex-1 px-4 py-3 rounded-xl text-sm font-bold bg-slate-100 text-slate-600 hover:bg-slate-200 transition-all cursor-pointer"
+                      >
+                        Maya
+                      </button>
+                      <button
+                        onClick={handleDeleteStaff}
+                        className="flex-1 px-4 py-3 rounded-xl text-sm font-bold bg-red-600 text-white hover:bg-red-700 transition-all cursor-pointer"
+                      >
+                        Haa, Tirtir
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Tab 11: SETTINGS */}
           {activeTab === 'settings' && (
             <div className="space-y-6">
@@ -5150,153 +5575,7 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                 </div>
               </div>
 
-              {/* Qaybta Maamulida Staff-ka (Staff / Sub-Admins Management) */}
-              {!isStaff && (
-                <div className="bg-white p-6 rounded-2xl border border-gray-100 card-shadow space-y-6 mt-6">
-                  <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
-                    <ShieldCheck size={20} className="text-black" />
-                    <div>
-                      <h3 className="text-sm font-sans font-bold text-slate-900">Maamulida Staff-ka & Sub-Admins (Staff Management)</h3>
-                      <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">Diiwaan geli oo maamul shaqaalaha dugsiga oo leh xuquuq xaddidan</p>
-                    </div>
-                  </div>
 
-                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                    {/* Staff Registration Form */}
-                    <div className="lg:col-span-1 bg-slate-50/50 p-5 rounded-2xl border border-slate-100 space-y-4">
-                      <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider">Diiwaan Geli Staff Cusub</h4>
-                      
-                      {staffError && (
-                        <div className="p-3 bg-red-50 text-red-700 rounded-xl border border-red-100 text-xs font-semibold">
-                          {staffError}
-                        </div>
-                      )}
-
-                      {staffSuccess && (
-                        <div className="p-3 bg-emerald-50 text-emerald-700 rounded-xl border border-emerald-100 text-xs font-semibold">
-                          {staffSuccess}
-                        </div>
-                      )}
-
-                      <form onSubmit={handleStaffSubmit} className="space-y-4">
-                        <div className="space-y-1.5">
-                          <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Magaca Buuxa (Full Name)</label>
-                          <input 
-                            type="text" 
-                            value={staffName}
-                            onChange={(e) => setStaffName(e.target.value)}
-                            placeholder="Tusaale: Maxamed Cali"
-                            required
-                            className="w-full text-xs px-4 py-3 bg-white border border-slate-200 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-black/10 focus:border-black transition-all"
-                          />
-                        </div>
-
-                        <div className="space-y-1.5">
-                          <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Email Sax Ah (Correct Email)</label>
-                          <input 
-                            type="email" 
-                            value={staffEmail}
-                            onChange={(e) => setStaffEmail(e.target.value)}
-                            placeholder="staff@dugsi.com"
-                            required
-                            className="w-full text-xs px-4 py-3 bg-white border border-slate-200 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-black/10 focus:border-black transition-all"
-                          />
-                        </div>
-
-                        <div className="space-y-1.5">
-                          <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Password (Ugu yaraan 6 xaraf)</label>
-                          <input 
-                            type="password" 
-                            value={staffPassword}
-                            onChange={(e) => setStaffPassword(e.target.value)}
-                            placeholder="Gali password-ka staff-ka"
-                            required
-                            minLength={6}
-                            className="w-full text-xs px-4 py-3 bg-white border border-slate-200 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-black/10 focus:border-black transition-all"
-                          />
-                        </div>
-
-                        <div className="space-y-1.5">
-                          <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Staff-kiisa / Xilka (Designation)</label>
-                          <input 
-                            type="text" 
-                            value={staffDesignation}
-                            onChange={(e) => setStaffDesignation(e.target.value)}
-                            placeholder="Tusaale: Sekretari, Accountant, Maamule ku xigeen"
-                            required
-                            className="w-full text-xs px-4 py-3 bg-white border border-slate-200 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-black/10 focus:border-black transition-all"
-                          />
-                        </div>
-
-                        <button 
-                          type="submit"
-                          disabled={staffLoading}
-                          className="w-full text-xs font-semibold bg-black hover:bg-slate-800 text-white py-3 rounded-xl transition-colors cursor-pointer flex items-center justify-center gap-1.5 shadow-sm disabled:bg-slate-400"
-                        >
-                          {staffLoading ? <RefreshCw size={14} className="animate-spin" /> : <Plus size={14} />}
-                          <span>Diiwaan Geli Staff-ka</span>
-                        </button>
-                      </form>
-                    </div>
-
-                    {/* Staff List Table */}
-                    <div className="lg:col-span-2 space-y-4">
-                      <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider">Shaqaalaha Diiwaan Gashan (Registered Staff)</h4>
-                      
-                      <div className="bg-white rounded-2xl border border-slate-100 overflow-hidden">
-                        <div className="overflow-x-auto">
-                          <table className="w-full text-left text-xs">
-                            <thead>
-                              <tr className="bg-slate-50 border-b border-slate-100 text-slate-500 font-bold uppercase tracking-wider">
-                                <th className="p-3">Magaca & Xilka</th>
-                                <th className="p-3">Email</th>
-                                <th className="p-3">Xaalada (Status)</th>
-                                <th className="p-3 text-right">Waxqabad (Action)</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {users.filter(usr => usr.organizationId === orgId && usr.role === 'schoolstaff').length === 0 ? (
-                                <tr>
-                                  <td colSpan={4} className="p-8 text-center text-slate-400 font-medium">
-                                    Ma jiro wax staff ah oo diiwaan gashan hadda.
-                                  </td>
-                                </tr>
-                              ) : (
-                                users.filter(usr => usr.organizationId === orgId && usr.role === 'schoolstaff').map(staff => (
-                                  <tr key={staff.uid} className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
-                                    <td className="p-3 font-semibold text-slate-800">
-                                      <div>{staff.fullName}</div>
-                                      <div className="text-[10px] text-slate-400 mt-0.5">{staff.staffDesignation || 'Staff'}</div>
-                                    </td>
-                                    <td className="p-3 text-slate-500">{staff.email}</td>
-                                    <td className="p-3">
-                                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${staff.active !== false ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'}`}>
-                                        {staff.active !== false ? 'Shaqeeya (Active)' : 'Ha shaqayn (Inactive)'}
-                                      </span>
-                                    </td>
-                                    <td className="p-3 text-right">
-                                      <button
-                                        onClick={() => toggleStaffActive(staff.uid, staff.active !== false)}
-                                        className={`px-2.5 py-1.5 rounded-lg text-[10px] font-bold transition-all cursor-pointer ${
-                                          staff.active !== false 
-                                            ? 'bg-red-50 hover:bg-red-100 text-red-600' 
-                                            : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-600'
-                                        }`}
-                                      >
-                                        {staff.active !== false ? 'Dami (Deactivate)' : 'Daar (Activate)'}
-                                      </button>
-                                    </td>
-                                  </tr>
-                                ))
-                              )}
-                            </tbody>
-                          </table>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
             </div>
           )}
           </>)}
@@ -5332,25 +5611,25 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                 </div>
 
                 <div className="flex-1 overflow-y-auto p-4 space-y-3">
-                  {!isStaff && (
+                  <button
+                    onClick={() => { setActiveTab('dashboard'); setIsMobileMenuOpen(false); }}
+                    className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl border text-left transition-colors ${activeTab === 'dashboard' ? 'bg-slate-900 text-white border-slate-900' : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'}`}
+                  >
+                    <LayoutDashboard size={18} />
+                    <span className="font-semibold">Dashboard</span>
+                  </button>
+
+                  {hasPermission('Students') && (
                     <button
-                      onClick={() => { setActiveTab('dashboard'); setIsMobileMenuOpen(false); }}
-                      className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl border text-left transition-colors ${activeTab === 'dashboard' ? 'bg-slate-900 text-white border-slate-900' : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'}`}
+                      onClick={() => { setActiveTab('students'); setIsMobileMenuOpen(false); }}
+                      className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl border text-left transition-colors ${activeTab === 'students' ? 'bg-slate-900 text-white border-slate-900' : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'}`}
                     >
-                      <LayoutDashboard size={18} />
-                      <span className="font-semibold">Dashboard</span>
+                      <GraduationCap size={18} />
+                      <span className="font-semibold">Students</span>
                     </button>
                   )}
 
-                  <button
-                    onClick={() => { setActiveTab('students'); setIsMobileMenuOpen(false); }}
-                    className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl border text-left transition-colors ${activeTab === 'students' ? 'bg-slate-900 text-white border-slate-900' : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'}`}
-                  >
-                    <GraduationCap size={18} />
-                    <span className="font-semibold">Students</span>
-                  </button>
-
-                  {!isStaff && !quranModeWithoutTeachers && (
+                  {hasPermission('Teachers') && !quranModeWithoutTeachers && (
                     <button
                       onClick={() => { setActiveTab('teachers'); setIsMobileMenuOpen(false); }}
                       className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl border text-left transition-colors ${activeTab === 'teachers' ? 'bg-slate-900 text-white border-slate-900' : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'}`}
@@ -5360,23 +5639,27 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                     </button>
                   )}
 
-                  <button
-                    onClick={() => { setActiveTab('subjects'); setIsMobileMenuOpen(false); }}
-                    className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl border text-left transition-colors ${activeTab === 'subjects' ? 'bg-slate-900 text-white border-slate-900' : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'}`}
-                  >
-                    <BookOpen size={18} />
-                    <span className="font-semibold">Subjects</span>
-                  </button>
+                  {hasPermission('School Settings') && (
+                    <button
+                      onClick={() => { setActiveTab('subjects'); setIsMobileMenuOpen(false); }}
+                      className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl border text-left transition-colors ${activeTab === 'subjects' ? 'bg-slate-900 text-white border-slate-900' : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'}`}
+                    >
+                      <BookOpen size={18} />
+                      <span className="font-semibold">Subjects</span>
+                    </button>
+                  )}
 
-                  <button
-                    onClick={() => { setActiveTab('class-sessions'); setIsMobileMenuOpen(false); }}
-                    className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl border text-left transition-colors ${activeTab === 'class-sessions' ? 'bg-slate-900 text-white border-slate-900' : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'}`}
-                  >
-                    <Clock size={18} />
-                    <span className="font-semibold">Class Sessions</span>
-                  </button>
+                  {hasPermission('School Settings') && (
+                    <button
+                      onClick={() => { setActiveTab('class-sessions'); setIsMobileMenuOpen(false); }}
+                      className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl border text-left transition-colors ${activeTab === 'class-sessions' ? 'bg-slate-900 text-white border-slate-900' : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'}`}
+                    >
+                      <Clock size={18} />
+                      <span className="font-semibold">Class Sessions</span>
+                    </button>
+                  )}
 
-                  {!isTeacher && (
+                  {hasPermission('School Settings') && (
                     <button
                       onClick={() => { setActiveTab('rooms'); setIsMobileMenuOpen(false); }}
                       className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl border text-left transition-colors ${activeTab === 'rooms' ? 'bg-slate-900 text-white border-slate-900' : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'}`}
@@ -5386,15 +5669,17 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                     </button>
                   )}
 
-                  <button
-                    onClick={() => { setActiveTab('attendance'); setAttendanceSubTab('take'); setIsMobileMenuOpen(false); }}
-                    className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl border text-left transition-colors ${activeTab === 'attendance' ? 'bg-slate-900 text-white border-slate-900' : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'}`}
-                  >
-                    <Calendar size={18} />
-                    <span className="font-semibold">Attendance</span>
-                  </button>
+                  {hasPermission('Attendance') && (
+                    <button
+                      onClick={() => { setActiveTab('attendance'); setAttendanceSubTab('take'); setIsMobileMenuOpen(false); }}
+                      className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl border text-left transition-colors ${activeTab === 'attendance' ? 'bg-slate-900 text-white border-slate-900' : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'}`}
+                    >
+                      <Calendar size={18} />
+                      <span className="font-semibold">Attendance</span>
+                    </button>
+                  )}
 
-                  {!isTeacher && (
+                  {hasPermission('Fees') && (
                     <button
                       onClick={() => { setActiveTab('fees'); setIsMobileMenuOpen(false); }}
                       className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl border text-left transition-colors ${activeTab === 'fees' ? 'bg-slate-900 text-white border-slate-900' : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'}`}
@@ -5404,7 +5689,7 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                     </button>
                   )}
 
-                  {!isTeacher && !isStaff && !quranModeWithoutTeachers && (
+                  {hasPermission('Teacher Salary') && !quranModeWithoutTeachers && (
                     <button
                       onClick={() => { setActiveTab('salaries'); setIsMobileMenuOpen(false); }}
                       className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl border text-left transition-colors ${activeTab === 'salaries' ? 'bg-slate-900 text-white border-slate-900' : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'}`}
@@ -5414,15 +5699,17 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                     </button>
                   )}
 
-                  <button
-                    onClick={() => { setActiveTab('exams'); setIsMobileMenuOpen(false); }}
-                    className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl border text-left transition-colors ${activeTab === 'exams' ? 'bg-slate-900 text-white border-slate-900' : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'}`}
-                  >
-                    <Award size={18} />
-                    <span className="font-semibold">Exams</span>
-                  </button>
+                  {hasPermission('Exams') && (
+                    <button
+                      onClick={() => { setActiveTab('exams'); setIsMobileMenuOpen(false); }}
+                      className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl border text-left transition-colors ${activeTab === 'exams' ? 'bg-slate-900 text-white border-slate-900' : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'}`}
+                    >
+                      <Award size={18} />
+                      <span className="font-semibold">Exams</span>
+                    </button>
+                  )}
 
-                  {!isTeacher && !isStaff && (
+                  {(hasPermission('Print Reports') || hasPermission('View Financial Reports')) && (
                     <button
                       onClick={() => { setActiveTab('reports'); setIsMobileMenuOpen(false); }}
                       className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl border text-left transition-colors ${activeTab === 'reports' ? 'bg-slate-900 text-white border-slate-900' : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'}`}
@@ -5432,16 +5719,28 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                     </button>
                   )}
 
-                  <button
-                    onClick={() => { setActiveTab('settings'); setIsMobileMenuOpen(false); }}
-                    className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl border text-left transition-colors ${activeTab === 'settings' ? 'bg-slate-900 text-white border-slate-900' : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'}`}
-                  >
-                    <Settings size={18} />
-                    <span className="font-semibold">Settings</span>
-                  </button>
+                  {hasPermission('User Management') && (
+                    <button
+                      onClick={() => { setActiveTab('staff'); setIsMobileMenuOpen(false); }}
+                      className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl border text-left transition-colors ${activeTab === 'staff' ? 'bg-slate-900 text-white border-slate-900' : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'}`}
+                    >
+                      <Users size={18} />
+                      <span className="font-semibold">Staff Management</span>
+                    </button>
+                  )}
+
+                  {hasPermission('School Settings') && (
+                    <button
+                      onClick={() => { setActiveTab('settings'); setIsMobileMenuOpen(false); }}
+                      className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl border text-left transition-colors ${activeTab === 'settings' ? 'bg-slate-900 text-white border-slate-900' : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'}`}
+                    >
+                      <Settings size={18} />
+                      <span className="font-semibold">Settings</span>
+                    </button>
+                  )}
 
                   <div className="pt-2 border-t border-slate-100 mt-2">
-<button
+                    <button
                       onClick={() => { setIsMobileMenuOpen(false); logout(); }}
                       className="w-full flex items-center justify-center gap-2 bg-red-50 hover:bg-red-100 text-red-600 font-bold px-4 py-3 rounded-2xl border border-red-200 transition-colors"
                     >

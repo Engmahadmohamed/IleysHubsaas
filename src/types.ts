@@ -24,6 +24,7 @@ export interface UserProfile {
   createdAt: string;
   teacherId?: string;
   staffDesignation?: string;
+  permissions?: string[];
 }
 
 export interface Student {

@@ -1,0 +1,41 @@
+{
+  "sidebar": {
+    "dashboard": "Dashboard-ka",
+    "students": "Ardayda",
+    "teachers": "Macalimiinta",
+    "subjects": "Maadooyinka",
+    "classes": "Fasalada & Qolalka",
+    "attendance": "Imaanshaha",
+    "fees": "Lacagta (Fees)",
+    "salary": "Mushaharka Macalimiinta",
+    "exams": "Imtixaanada",
+    "reports": "Warbixinada",
+    "staff": "Shaqaalaha (Staff)",
+    "settings": "Settings-ka",
+    "support": "Caawimaad & Dhibaatooyin",
+    "logout": "Bax (Logout)"
+  },
+  "header": {
+    "welcome": "Soo Dhawoow",
+    "schoolAdmin": "Maamulaha Iskuulka",
+    "search": "Raadi..."
+  },
+  "dashboard": {
+    "totalStudents": "Tirada Ardayda",
+    "totalTeachers": "Tirada Macalimiinta",
+    "activeClasses": "Fasalada Furan",
+    "todayAttendance": "Imaanshaha Maanta",
+    "recentActivity": "Dhaqdhaqaaqa Dhow",
+    "quickActions": "Tallaabooyinka Degdega ah"
+  },
+  "common": {
+    "add": "Kudar Cusub",
+    "edit": "Wax Ka Bedel",
+    "delete": "Tirtir",
+    "save": "Keydi Xogta",
+    "cancel": "Ka Noqo",
+    "search": "Raadi",
+    "status": "Xaaladda",
+    "action": "Tallaabo"
+  }
+}

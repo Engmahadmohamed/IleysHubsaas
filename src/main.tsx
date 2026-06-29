@@ -5,6 +5,7 @@ import App from './App';
 import ErrorBoundary from './components/ErrorBoundary';
 import { AlertProvider } from './context/AlertContext';
 import './index.css';
+import './i18n';
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

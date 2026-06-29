@@ -61,9 +61,22 @@ service cloud.firestore {
       return 'teacherId' in getUserData() ? getUserData().teacherId : '';
     }
 
+
     // Check if the user is a Staff member belonging to the organization
     function isStaff(orgId) {
       return belongsToOrganization(orgId) && getUserData().role == 'schoolstaff';
+    }
+
+    // Check if a staff member has a specific named permission
+    // Staff permissions are stored as a list in users/{uid}.permissions
+    function hasPermission(orgId, permKey) {
+      return isSignedIn() &&
+             userProfileExists() &&
+             getUserData().active == true &&
+             getUserData().organizationId == orgId &&
+             getUserData().role == 'schoolstaff' &&
+             'permissions' in getUserData() &&
+             permKey in getUserData().permissions;
     }
 
 
@@ -227,7 +240,13 @@ service cloud.firestore {
 
     // Class Sessions collection group query security
     match /{path=**}/class_sessions/{sessionId} {
-      allow list, get: if isSuperAdmin() || (request.auth != null && getUserData().role == 'teacher');
+      allow list, get: if isSuperAdmin();
+      allow write: if isSuperAdmin();
+    }
+
+    // Teachers collection group query security
+    match /{path=**}/teachers/{teacherId} {
+      allow list, get: if isSuperAdmin();
       allow write: if isSuperAdmin();
     }
 
@@ -236,13 +255,14 @@ service cloud.firestore {
     // 1. Users Collection
     // ---------------------------------------------------------
     match /users/{userId} {
-      // Anyone logged in can read user profiles (staff directory & lookups)
-      // Unauthenticated users can read if the user document is active (for login/auto-registration fallback)
-      allow read: if isSignedIn() || (resource != null && resource.data.active == true);
+      // Users can get their own profile, or admins/staff can get/list profiles within their own organization.
+      // Super Admin can read all.
+      allow get: if isSignedIn() && (isSuperAdmin() || request.auth.uid == userId || (userProfileExists() && resource.data.organizationId == getUserData().organizationId));
+      allow list: if isSignedIn() && (isSuperAdmin() || (userProfileExists() && resource.data.organizationId == getUserData().organizationId));
 
-      // Only Super Admin, the user themselves (initial signup), or organization admins creating staff
+      // Only Super Admin or Organization Admins can create new user profiles (staff/teachers).
+      // Self-registration is strictly disabled to prevent privilege escalation.
       allow create: if isSuperAdmin() || 
-                       (isSignedIn() && request.auth.uid == userId && isValidUserProfile(request.resource.data)) ||
                        (isOrganizationAdmin(request.resource.data.organizationId) && 
                         isValidUserProfile(request.resource.data) && 
                         request.resource.data.role in ['schooladmin', 'quranadmin', 'teacher', 'schoolstaff']);
@@ -260,8 +280,11 @@ service cloud.firestore {
                        request.resource.data.role in ['schooladmin', 'quranadmin', 'teacher', 'schoolstaff'] &&
                        resource.data.role != 'superadmin');
 
-      // Only Super Admin can hard delete users
-      allow delete: if isSuperAdmin();
+      // Super Admin can delete anyone; Org Admin can delete staff from their own org (not other admins)
+      allow delete: if isSuperAdmin() || 
+                       (isOrganizationAdmin(resource.data.organizationId) && 
+                        resource.data.role == 'schoolstaff' &&
+                        resource.data.organizationId == getUserData().organizationId);
     }
 
 
@@ -277,100 +300,96 @@ service cloud.firestore {
 
       // ---- STUDENTS ----
       match /students/{studentId} {
-        // Staff members of the same organization can read student files
-        allow read: if isSuperAdmin() || isOrganizationAdmin(organizationId) || isTeacher(organizationId) || isStaff(organizationId);
+        // Staff with 'Students' permission can read student records
+        allow read: if isSuperAdmin() || isOrganizationAdmin(organizationId) || isTeacher(organizationId) || hasPermission(organizationId, 'Students');
         
-        // Admins and staff can create and update student records
-        allow create: if (isSuperAdmin() || isOrganizationAdmin(organizationId) || isStaff(organizationId)) && 
+        // Admins and staff with Students permission can create
+        allow create: if (isSuperAdmin() || isOrganizationAdmin(organizationId) || hasPermission(organizationId, 'Students')) && 
                          isValidStudent(request.resource.data) &&
                          request.resource.data.organizationId == organizationId;
                          
-        allow update: if (isSuperAdmin() || isOrganizationAdmin(organizationId) || isStaff(organizationId)) && 
+        // Staff with Students permission can update (same permission as create — no separate 'Edit Students')
+        allow update: if (isSuperAdmin() || isOrganizationAdmin(organizationId) || hasPermission(organizationId, 'Students')) && 
                          isValidStudent(request.resource.data) &&
                          request.resource.data.organizationId == resource.data.organizationId &&
                          request.resource.data.createdAt == resource.data.createdAt;
         
-        // Permanent deletions are restricted to Super Admin or Organization Admin
+        // Only Admin can permanently delete
         allow delete: if isSuperAdmin() || isOrganizationAdmin(organizationId);
       }
 
       // ---- TEACHERS ----
       match /teachers/{teacherId} {
-        // Staff members of the organization can read teacher profiles
-        allow read: if isSuperAdmin() || belongsToOrganization(organizationId);
+        // Staff with 'Teachers' permission or any org member can read teacher profiles
+        allow read: if isSuperAdmin() || isOrganizationAdmin(organizationId) || hasPermission(organizationId, 'Teachers') || belongsToOrganization(organizationId);
         
-        // Only Admins can create or update teacher profiles
-        allow create: if (isSuperAdmin() || isOrganizationAdmin(organizationId)) && 
+        allow create: if (isSuperAdmin() || isOrganizationAdmin(organizationId) || hasPermission(organizationId, 'Teachers')) && 
                          isValidTeacher(request.resource.data) &&
                          request.resource.data.organizationId == organizationId;
 
-        allow update: if (isSuperAdmin() || isOrganizationAdmin(organizationId)) && 
+        allow update: if (isSuperAdmin() || isOrganizationAdmin(organizationId) || hasPermission(organizationId, 'Teachers')) && 
                          isValidTeacher(request.resource.data) &&
                          request.resource.data.organizationId == resource.data.organizationId &&
                          request.resource.data.createdAt == resource.data.createdAt;
         
-        // Permanent deletions are restricted to Super Admin or Organization Admin
-        allow delete: if isSuperAdmin() || isOrganizationAdmin(organizationId);
+        allow delete: if isSuperAdmin() || isOrganizationAdmin(organizationId) || hasPermission(organizationId, 'Teachers');
       }
 
       // ---- SUBJECTS ----
       match /subjects/{subjectId} {
-        // Admins and staff read all; Teachers read only assigned subjects
+        // Staff with 'Subjects' permission can read; Teachers read their assigned subjects
         allow read: if isSuperAdmin() || 
                        isOrganizationAdmin(organizationId) || 
-                       isStaff(organizationId) ||
+                       hasPermission(organizationId, 'Subjects') ||
+                       belongsToOrganization(organizationId) ||
                        (isTeacher(organizationId) && (resource.data.teacherId == getTeacherId() || resource.data.teacherId == request.auth.uid || getTeacherId() == '')) ||
                        (request.auth == null); // Allow ResultPortal.tsx to map subjectId to subjectName
         
-        // Admins and staff can create or update subjects
-        allow create: if (isSuperAdmin() || isOrganizationAdmin(organizationId) || isStaff(organizationId)) && 
+        allow create: if (isSuperAdmin() || isOrganizationAdmin(organizationId) || hasPermission(organizationId, 'Subjects')) && 
                          isValidSubject(request.resource.data) &&
                          request.resource.data.organizationId == organizationId;
 
-        allow update: if (isSuperAdmin() || isOrganizationAdmin(organizationId) || isStaff(organizationId)) && 
+        allow update: if (isSuperAdmin() || isOrganizationAdmin(organizationId) || hasPermission(organizationId, 'Subjects')) && 
                          isValidSubject(request.resource.data) &&
                          request.resource.data.organizationId == resource.data.organizationId;
         
-        allow delete: if isSuperAdmin() || isOrganizationAdmin(organizationId) || isStaff(organizationId);
+        allow delete: if isSuperAdmin() || isOrganizationAdmin(organizationId) || hasPermission(organizationId, 'Subjects');
       }
 
       // ---- CLASS ROOMS ----
       match /rooms/{roomId} {
         allow read: if isSuperAdmin() || belongsToOrganization(organizationId);
-        allow create, update: if (isSuperAdmin() || isOrganizationAdmin(organizationId) || isStaff(organizationId)) &&
+        allow create, update: if (isSuperAdmin() || isOrganizationAdmin(organizationId) || hasPermission(organizationId, 'Class Rooms')) &&
                                  request.resource.data.organizationId == organizationId;
-        allow delete: if isSuperAdmin() || isOrganizationAdmin(organizationId) || isStaff(organizationId);
+        allow delete: if isSuperAdmin() || isOrganizationAdmin(organizationId) || hasPermission(organizationId, 'Class Rooms');
       }
 
       // ---- CLASS SESSIONS ----
       match /class_sessions/{sessionId} {
         allow read: if isSuperAdmin() || belongsToOrganization(organizationId);
-        allow create, update: if (isSuperAdmin() || isOrganizationAdmin(organizationId) || isStaff(organizationId)) &&
+        allow create, update: if (isSuperAdmin() || isOrganizationAdmin(organizationId) || hasPermission(organizationId, 'Class Sessions')) &&
                                  isValidClassSession(request.resource.data) &&
                                  request.resource.data.organizationId == organizationId;
-        allow delete: if isSuperAdmin() || isOrganizationAdmin(organizationId) || isStaff(organizationId);
+        allow delete: if isSuperAdmin() || isOrganizationAdmin(organizationId) || hasPermission(organizationId, 'Class Sessions');
       }
 
       // ---- ATTENDANCE RECORDS ----
       match /attendance/{attendanceId} {
-        // Admins and staff can read all; teachers can only read attendance of subjects they teach
         allow read: if isSuperAdmin() || 
                        isOrganizationAdmin(organizationId) || 
-                       isStaff(organizationId) ||
+                       hasPermission(organizationId, 'Attendance') ||
                        (isTeacher(organizationId) && (resource.data.teacherId == getTeacherId() || resource.data.teacherId == request.auth.uid || getTeacherId() == ''));
         
-        // Admins, staff or the assigned teacher can create attendance
         allow create: if (isSuperAdmin() || 
                           isOrganizationAdmin(organizationId) || 
-                          isStaff(organizationId) ||
+                          hasPermission(organizationId, 'Attendance') ||
                           (isTeacher(organizationId) && (request.resource.data.teacherId == getTeacherId() || request.resource.data.teacherId == request.auth.uid || getTeacherId() == ''))) &&
                          isValidAttendance(request.resource.data) &&
                          request.resource.data.organizationId == organizationId;
 
-        // Admins, staff or the assigned teacher can update attendance
         allow update: if (isSuperAdmin() || 
                           isOrganizationAdmin(organizationId) || 
-                          isStaff(organizationId) ||
+                          hasPermission(organizationId, 'Attendance') ||
                           (isTeacher(organizationId) && 
                            (resource.data.teacherId == getTeacherId() || resource.data.teacherId == request.auth.uid || getTeacherId() == '') && 
                            (request.resource.data.teacherId == getTeacherId() || request.resource.data.teacherId == request.auth.uid || getTeacherId() == ''))) &&
@@ -378,48 +397,45 @@ service cloud.firestore {
                          request.resource.data.organizationId == resource.data.organizationId &&
                          request.resource.data.createdAt == resource.data.createdAt;
         
-        allow delete: if isSuperAdmin() || isOrganizationAdmin(organizationId) || isStaff(organizationId);
+        allow delete: if isSuperAdmin() || isOrganizationAdmin(organizationId) || hasPermission(organizationId, 'Attendance');
       }
 
       // ---- TUITION FEES ----
       match /fees/{feeId} {
-        // Public can GET a single paid fee doc by its ID (for receipt verification short links)
-        // List is still restricted to authorized staff only
-        allow get: if isSuperAdmin() || isOrganizationAdmin(organizationId) || isStaff(organizationId) ||
+        allow get: if isSuperAdmin() || isOrganizationAdmin(organizationId) || hasPermission(organizationId, 'Fees') ||
                       (resource.data.status == 'paid' || resource.data.status == 'cancelled' || resource.data.status == 'approved');
         allow list: if true; // Allow public to query student debts for verification warning
         
-        // Admins and staff can create or update fee invoices
-        allow create: if (isSuperAdmin() || isOrganizationAdmin(organizationId) || isStaff(organizationId)) && 
+        allow create: if (isSuperAdmin() || isOrganizationAdmin(organizationId) || hasPermission(organizationId, 'Fees')) && 
                          isValidFee(request.resource.data) &&
                          request.resource.data.organizationId == organizationId;
 
-        allow update: if (isSuperAdmin() || isOrganizationAdmin(organizationId) || isStaff(organizationId)) && 
+        allow update: if (isSuperAdmin() || isOrganizationAdmin(organizationId) || hasPermission(organizationId, 'Fees')) && 
                          isValidFee(request.resource.data) &&
                          request.resource.data.organizationId == resource.data.organizationId;
         
-        // Permanent financial ledger deletions are restricted to Super Admin or Organization Admin
         allow delete: if isSuperAdmin() || isOrganizationAdmin(organizationId);
       }
 
       // ---- SALARIES ----
       match /salary/{salaryId} {
-        // Admins can read all; Teachers can only read their own salaries
+        // Admins and staff with Teacher Salary permission can read; Teachers can only read their own salaries
         allow read: if isSuperAdmin() || 
-                       isOrganizationAdmin(organizationId) || 
+                       isOrganizationAdmin(organizationId) ||
+                       hasPermission(organizationId, 'Teacher Salary') ||
                        (isTeacher(organizationId) && (resource.data.teacherId == getTeacherId() || resource.data.teacherId == request.auth.uid || getTeacherId() == ''));
         
         // Only Admins can write salary invoices
-        allow create: if (isSuperAdmin() || isOrganizationAdmin(organizationId)) && 
+        allow create: if (isSuperAdmin() || isOrganizationAdmin(organizationId) || hasPermission(organizationId, 'Teacher Salary')) && 
                          isValidSalary(request.resource.data) &&
                          request.resource.data.organizationId == organizationId;
 
-        allow update: if (isSuperAdmin() || isOrganizationAdmin(organizationId)) && 
+        allow update: if (isSuperAdmin() || isOrganizationAdmin(organizationId) || hasPermission(organizationId, 'Teacher Salary')) && 
                          isValidSalary(request.resource.data) &&
                          request.resource.data.organizationId == resource.data.organizationId;
         
         // Permanent deletions restricted to Super Admin or Organization Admin
-        allow delete: if isSuperAdmin() || isOrganizationAdmin(organizationId);
+        allow delete: if isSuperAdmin() || isOrganizationAdmin(organizationId) || hasPermission(organizationId, 'Teacher Salary');
       }
 
       // ---- EXAM SESSIONS ----
@@ -428,16 +444,16 @@ service cloud.firestore {
         allow read: if isSuperAdmin() || belongsToOrganization(organizationId);
         
         // Admins, staff or Teachers can schedule exams
-        allow create: if (isSuperAdmin() || isOrganizationAdmin(organizationId) || isTeacher(organizationId) || isStaff(organizationId)) && 
+        allow create: if (isSuperAdmin() || isOrganizationAdmin(organizationId) || isTeacher(organizationId) || hasPermission(organizationId, 'Exams')) && 
                          isValidExam(request.resource.data) &&
                          request.resource.data.organizationId == organizationId;
 
-        allow update: if (isSuperAdmin() || isOrganizationAdmin(organizationId) || isTeacher(organizationId) || isStaff(organizationId)) && 
+        allow update: if (isSuperAdmin() || isOrganizationAdmin(organizationId) || isTeacher(organizationId) || hasPermission(organizationId, 'Exams')) && 
                          isValidExam(request.resource.data) &&
                          request.resource.data.organizationId == resource.data.organizationId &&
                          request.resource.data.createdAt == resource.data.createdAt;
                          
-        allow delete: if isSuperAdmin() || isOrganizationAdmin(organizationId) || isTeacher(organizationId) || isStaff(organizationId);
+        allow delete: if isSuperAdmin() || isOrganizationAdmin(organizationId) || isTeacher(organizationId) || hasPermission(organizationId, 'Exams');
       }
 
       // ---- EXAM RESULTS ----
@@ -445,7 +461,7 @@ service cloud.firestore {
         // Staff can read if Super Admin, Org Admin, staff or Teacher. Unauthenticated gets allowed if published.
         allow get: if isSuperAdmin() || 
                       isOrganizationAdmin(organizationId) || 
-                      isStaff(organizationId) ||
+                      hasPermission(organizationId, 'Exams') ||
                       resource.data.published == true || 
                       (isTeacher(organizationId) && 
                        exists(/databases/$(database)/documents/organizations/$(organizationId)/subjects/$(resource.data.subjectId)) && (
@@ -457,14 +473,14 @@ service cloud.firestore {
         // Org members can list results. Unauthenticated users can list published results.
         allow list: if isSuperAdmin() || 
                        isOrganizationAdmin(organizationId) || 
-                       isStaff(organizationId) ||
+                       hasPermission(organizationId, 'Exams') ||
                        isTeacher(organizationId) || 
                        (request.auth == null && resource.data.published == true);
 
         // Create results: Must be Admin, staff or the assigned Teacher of the subject
         allow create: if (isSuperAdmin() || 
                           isOrganizationAdmin(organizationId) || 
-                          isStaff(organizationId) ||
+                          hasPermission(organizationId, 'Exams') ||
                           (isTeacher(organizationId) && 
                            exists(/databases/$(database)/documents/organizations/$(organizationId)/subjects/$(request.resource.data.subjectId)) &&
                            get(/databases/$(database)/documents/organizations/$(organizationId)/subjects/$(request.resource.data.subjectId)).data.teacherId == getUserData().teacherId)) &&
@@ -474,7 +490,7 @@ service cloud.firestore {
         // Update results: Must be Admin, staff or the assigned Teacher of the subject
         allow update: if (isSuperAdmin() || 
                           isOrganizationAdmin(organizationId) || 
-                          isStaff(organizationId) ||
+                          hasPermission(organizationId, 'Exams') ||
                           (isTeacher(organizationId) && 
                            exists(/databases/$(database)/documents/organizations/$(organizationId)/subjects/$(resource.data.subjectId)) &&
                            get(/databases/$(database)/documents/organizations/$(organizationId)/subjects/$(resource.data.subjectId)).data.teacherId == getUserData().teacherId &&
@@ -484,7 +500,7 @@ service cloud.firestore {
                          request.resource.data.organizationId == resource.data.organizationId &&
                          request.resource.data.createdAt == resource.data.createdAt;
 
-        allow delete: if isSuperAdmin() || isOrganizationAdmin(organizationId) || isTeacher(organizationId) || isStaff(organizationId);
+        allow delete: if isSuperAdmin() || isOrganizationAdmin(organizationId) || isTeacher(organizationId) || hasPermission(organizationId, 'Exams');
       }
 
       // ---- SETTINGS ----

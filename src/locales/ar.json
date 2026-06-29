@@ -1,0 +1,41 @@
+{
+  "sidebar": {
+    "dashboard": "لوحة القيادة",
+    "students": "الطلاب",
+    "teachers": "المعلمون",
+    "subjects": "المواد",
+    "classes": "الفصول والقاعات",
+    "attendance": "الحضور",
+    "fees": "الرسوم الدراسية",
+    "salary": "رواتب المعلمين",
+    "exams": "الامتحانات",
+    "reports": "التقارير",
+    "staff": "إدارة الموظفين",
+    "settings": "الإعدادات",
+    "support": "المساعدة والدعم",
+    "logout": "تسجيل الخروج"
+  },
+  "header": {
+    "welcome": "مرحباً بعودتك",
+    "schoolAdmin": "مدير المدرسة",
+    "search": "بحث..."
+  },
+  "dashboard": {
+    "totalStudents": "إجمالي الطلاب",
+    "totalTeachers": "إجمالي المعلمين",
+    "activeClasses": "الفصول النشطة",
+    "todayAttendance": "حضور اليوم",
+    "recentActivity": "النشاط الأخير",
+    "quickActions": "إجراءات سريعة"
+  },
+  "common": {
+    "add": "إضافة جديد",
+    "edit": "تعديل",
+    "delete": "حذف",
+    "save": "حفظ التغييرات",
+    "cancel": "إلغاء",
+    "search": "بحث",
+    "status": "الحالة",
+    "action": "إجراءات"
+  }
+}

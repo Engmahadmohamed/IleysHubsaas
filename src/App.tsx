@@ -4,6 +4,7 @@ import { AppProvider, useApp } from './context/AppContext';
 import SuperAdmin from './components/SuperAdmin';
 import SchoolAdmin from './components/SchoolAdmin';
 import ResultPortal from './components/ResultPortal';
+import FeeCheckingPortal from './components/FeeCheckingPortal';
 import ReceiptVerification from './components/ReceiptVerification';
 import NotFound from './components/NotFound';
 import SuspendedUserModal from './components/SuspendedUserModal';
@@ -441,6 +442,26 @@ function RoutesContainer({ currentUser }: { currentUser: any }) {
             </Link>
           </div>
           <ResultPortal />
+        </div>
+      )
+    },
+    {
+      path: '/check-fee/:orgId',
+      element: (
+        <div className="relative">
+          <div className="bg-emerald-900 p-3 flex justify-between items-center text-white text-xs border-b border-emerald-800">
+            <div className="flex items-center gap-1">
+              <Database size={15} className="text-white" />
+              <span className="font-bold">Student Fee Checking Access</span>
+            </div>
+            <Link 
+              to="/"
+              className="bg-black/50 hover:bg-black/70 text-white font-semibold px-3 py-1 rounded-lg text-xs cursor-pointer border border-emerald-700/50"
+            >
+              ← Back to System Login
+            </Link>
+          </div>
+          <FeeCheckingPortal />
         </div>
       )
     },
