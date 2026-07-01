@@ -126,7 +126,7 @@ export interface FeeRecord {
   studentId: string;
   studentName: string;
   amount: number;
-  status: 'approved' | 'unpaid' | 'paid' | 'cancelled';
+  status: 'pending' | 'unpaid' | 'paid' | 'cancelled';
   paidAt?: string;
   invoiceNumber: string;
   month: string; // e.g. "June 2026"
@@ -175,3 +175,5 @@ export interface ExamResultRecord {
   published: boolean;
   createdAt: string;
 }
+
+

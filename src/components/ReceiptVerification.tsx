@@ -65,7 +65,7 @@ export default function ReceiptVerification() {
                 const debtsQuery = query(
                   collection(db, 'organizations', orgId, 'fees'),
                   where('studentId', '==', data.studentId),
-                  where('status', '==', 'unpaid')
+                  where('status', 'in', ['pending', 'unpaid'])
                 );
                 const debtsSnap = await getDocs(debtsQuery);
                 setDebtCount(debtsSnap.docs.length);
@@ -118,7 +118,7 @@ export default function ReceiptVerification() {
     }
   } catch(e) {}
 
-  const isPaid = fee?.status === 'paid' || fee?.status === 'approved';
+  const isPaid = fee?.status === 'paid';
   const isCancelled = fee?.status === 'cancelled';
 
   const getBase64ImageFromUrl = async (imageUrl: string): Promise<string> => {
@@ -471,3 +471,5 @@ export default function ReceiptVerification() {
     </div>
   );
 }
+
+

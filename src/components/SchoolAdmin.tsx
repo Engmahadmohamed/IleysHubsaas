@@ -18,6 +18,7 @@ import StudentDetail from './StudentDetail';
 import TeacherDetail from './TeacherDetail';
 import SubjectDetail from './SubjectDetail';
 import LanguageSwitcher from './LanguageSwitcher';
+
 import { useTranslation } from 'react-i18next';
 
 export default function SchoolAdmin() {
@@ -347,12 +348,7 @@ export default function SchoolAdmin() {
     ? allOrgExams.filter(ex => ex.subjectId && teacherSubjectIds.includes(ex.subjectId))
     : allOrgExams;
   const isFeeExpired = (fee: FeeRecord) => {
-    if (fee.status === 'unpaid') return false;
-    if (!fee.paidAt) return false;
-    const paidDate = new Date(fee.paidAt);
-    const expiryDate = new Date(paidDate);
-    expiryDate.setDate(expiryDate.getDate() + 30);
-    return new Date() > expiryDate;
+    return false;
   };
 
   const validStudentIds = new Set(orgStudents.map(s => s.id));
@@ -360,20 +356,27 @@ export default function SchoolAdmin() {
   
   const studentDebts = useMemo(() => {
     const debts: Record<string, FeeRecord[]> = {};
-    orgFees.filter(f => f.status === 'unpaid' || isFeeExpired(f)).forEach(f => {
+    orgFees.filter(f => f.status === 'pending' || f.status === 'unpaid').forEach(f => {
       if (!debts[f.studentId]) debts[f.studentId] = [];
       debts[f.studentId].push(f);
     });
     return debts;
   }, [orgFees]);
 
+  const currentMonthStr = useMemo(() => new Date().toLocaleString('default', { month: 'long', year: 'numeric' }), []);
+
   const pendingFeeRecords = useMemo(() => {
-    return Object.values(studentDebts).filter(fees => fees.length === 1).flatMap(fees => fees);
-  }, [studentDebts]);
+    // Strictly pending: only owes for the CURRENT month (no past months)
+    return Object.values(studentDebts)
+      .filter(fees => fees.every(f => f.month === currentMonthStr))
+      .flatMap(fees => fees);
+  }, [studentDebts, currentMonthStr]);
 
   const overdueStudentsList = useMemo(() => {
-    return Object.values(studentDebts).filter(fees => fees.length >= 2);
-  }, [studentDebts]);
+    // Overdue / Deymaha: owes for ANY past month
+    return Object.values(studentDebts)
+      .filter(fees => fees.some(f => f.month !== currentMonthStr));
+  }, [studentDebts, currentMonthStr]);
 
   const orgSalaries = isTeacher ? allOrgSalaries.filter(sal => sal.teacherId === matchingTeacher?.id) : allOrgSalaries; // Teachers only see their own salary status
   const orgAttendance = isTeacher
@@ -384,8 +387,8 @@ export default function SchoolAdmin() {
   const totalStudents = orgStudents.length;
   const totalTeachers = orgTeachers.length;
   const totalSubjects = orgSubjects.length;
-  const collectedFees = orgFees.filter(f => (f.status === 'paid' || f.status === 'approved') && !isFeeExpired(f)).reduce((sum, f) => sum + f.amount, 0);
-  const pendingFees = orgFees.filter(f => f.status === 'unpaid' || isFeeExpired(f)).reduce((sum, f) => sum + f.amount, 0);
+  const collectedFees = orgFees.filter(f => f.status === 'paid').reduce((sum, f) => sum + f.amount, 0);
+  const pendingFees = orgFees.filter(f => f.status === 'pending' || f.status === 'unpaid').reduce((sum, f) => sum + f.amount, 0);
   const todayDateStr = new Date().toISOString().split('T')[0];
   const todayAttendance = orgAttendance.filter(a => a.date === todayDateStr);
   const presentCount = todayAttendance.reduce((acc, curr) => 
@@ -1139,8 +1142,8 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
 
       // Calculate stats
       const totalInvoiced = feeRecords.reduce((sum, f) => sum + (f.amount || 0), 0);
-      const totalPaid = feeRecords.filter(f => f.status === 'paid' || f.status === 'approved').reduce((sum, f) => sum + (f.amount || 0), 0);
-      const totalUnpaid = feeRecords.filter(f => f.status === 'unpaid').reduce((sum, f) => sum + (f.amount || 0), 0);
+      const totalPaid = feeRecords.filter(f => f.status === 'paid').reduce((sum, f) => sum + (f.amount || 0), 0);
+      const totalUnpaid = feeRecords.filter(f => f.status === 'pending' || f.status === 'unpaid').reduce((sum, f) => sum + (f.amount || 0), 0);
 
       // Summary Cards Block (3 Columns)
       doc.setFillColor(248, 250, 252); // slate-50
@@ -1228,7 +1231,7 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
         doc.text(fee.invoiceNumber, colPositions[3], y + 6);
         doc.text(`$${fee.amount}`, colPositions[4], y + 6);
 
-        if (fee.status === 'paid' || fee.status === 'approved') {
+        if (fee.status === 'paid') {
           doc.setTextColor(21, 128, 61); // green-700
           doc.setFont("helvetica", "bold");
           doc.text("PAID", colPositions[5], y + 6);
@@ -1879,7 +1882,7 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
   const downloadAllPendingFeesPDF = () => {
     try {
       const pendingList = orgFees
-        .filter(f => f.status === 'unpaid' || isFeeExpired(f))
+        .filter(f => f.status === 'pending' || f.status === 'unpaid')
         .filter(f => f.studentName.toLowerCase().includes(pendingSearch.toLowerCase()));
 
       if (pendingList.length === 0) {
@@ -2724,6 +2727,8 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
+            <LanguageSwitcher />
+            
             {isQuranSchool && (
               <button 
                 onClick={() => setQuranModeWithoutTeachers(!quranModeWithoutTeachers)}
@@ -2786,7 +2791,7 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
               onClick={() => setIsMobileMenuOpen(false)}
               className={({ isActive }) => `w-full flex items-center gap-2.5 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all cursor-pointer ${isActive ? 'active-nav' : 'text-slate-600 hover:bg-slate-50 sidebar-item'}`}
             >
-              <LayoutDashboard size={18} /> Dashboard
+              <LayoutDashboard size={18} /> {t('sidebar.dashboard')}
             </NavLink>
           )}
           {!isTeacher && (
@@ -2797,7 +2802,7 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                   onClick={() => setIsMobileMenuOpen(false)}
                   className={({ isActive }) => `w-full flex items-center gap-2.5 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all cursor-pointer ${isActive || location.pathname.includes('/portal/students/') ? 'active-nav' : 'text-slate-600 hover:bg-slate-50 sidebar-item'}`}
                 >
-                  <GraduationCap size={18} /> Students ({totalStudents})
+                  <GraduationCap size={18} /> {t('sidebar.students')} ({totalStudents})
                 </NavLink>
               )}
               {hasPermission('Teachers') && !quranModeWithoutTeachers && (
@@ -2806,7 +2811,7 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                   onClick={() => setIsMobileMenuOpen(false)}
                   className={({ isActive }) => `w-full flex items-center gap-2.5 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all cursor-pointer ${isActive || location.pathname.includes('/portal/teachers/') ? 'active-nav' : 'text-slate-600 hover:bg-slate-50 sidebar-item'}`}
                 >
-                  <Users size={18} /> Teachers ({totalTeachers})
+                  <Users size={18} /> {t('sidebar.teachers')} ({totalTeachers})
                 </NavLink>
               )}
               {hasPermission('School Settings') && (
@@ -2816,21 +2821,21 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                     onClick={() => setIsMobileMenuOpen(false)}
                     className={({ isActive }) => `w-full flex items-center gap-2.5 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all cursor-pointer ${isActive || location.pathname.includes('/portal/subjects/') ? 'active-nav' : 'text-slate-600 hover:bg-slate-50 sidebar-item'}`}
                   >
-                    <BookOpen size={18} /> Subjects ({totalSubjects})
+                    <BookOpen size={18} /> {t('sidebar.subjects')} ({totalSubjects})
                   </NavLink>
                   <NavLink 
                     to="/portal/class-sessions"
                     onClick={() => setIsMobileMenuOpen(false)}
                     className={({ isActive }) => `w-full flex items-center gap-2.5 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all cursor-pointer ${isActive || location.pathname.includes('/portal/class-sessions/') ? 'active-nav' : 'text-slate-600 hover:bg-slate-50 sidebar-item'}`}
                   >
-                    <Clock size={18} /> Class Sessions ({orgClassSessions.length})
+                    <Clock size={18} /> {t('sidebar.classes')} ({orgClassSessions.length})
                   </NavLink>
                   <NavLink 
                     to="/portal/rooms"
                     onClick={() => setIsMobileMenuOpen(false)}
                     className={({ isActive }) => `w-full flex items-center gap-2.5 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all cursor-pointer ${isActive ? 'active-nav' : 'text-slate-600 hover:bg-slate-50 sidebar-item'}`}
                   >
-                    <School size={18} /> Class Rooms
+                    <School size={18} /> {t('sidebar.classes')}
                   </NavLink>
                 </>
               )}
@@ -2840,7 +2845,7 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                   onClick={() => { setAttendanceSubTab('take'); setIsMobileMenuOpen(false); }}
                   className={({ isActive }) => `w-full flex items-center gap-2.5 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all cursor-pointer ${isActive ? 'active-nav' : 'text-slate-600 hover:bg-slate-50 sidebar-item'}`}
                 >
-                  <Calendar size={18} /> Attendance (Xaadirinta)
+                  <Calendar size={18} /> {t('sidebar.attendance')}
                 </NavLink>
               )}
               {hasPermission('Fees') && (
@@ -2849,7 +2854,7 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                   onClick={() => setIsMobileMenuOpen(false)}
                   className={({ isActive }) => `w-full flex items-center gap-2.5 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all cursor-pointer ${isActive ? 'active-nav' : 'text-slate-600 hover:bg-slate-50 sidebar-item'}`}
                 >
-                  <DollarSign size={18} /> Student Fees
+                  <DollarSign size={18} /> {t('sidebar.fees')}
                 </NavLink>
               )}
               {hasPermission('Teacher Salary') && !quranModeWithoutTeachers && (
@@ -2858,7 +2863,7 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                   onClick={() => setIsMobileMenuOpen(false)}
                   className={({ isActive }) => `w-full flex items-center gap-2.5 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all cursor-pointer ${isActive ? 'active-nav' : 'text-slate-600 hover:bg-slate-50 sidebar-item'}`}
                 >
-                  <DollarSign size={18} /> Teacher Salary
+                  <DollarSign size={18} /> {t('sidebar.salary')}
                 </NavLink>
               )}
               {hasPermission('Exams') && (
@@ -2867,16 +2872,17 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                   onClick={() => setIsMobileMenuOpen(false)}
                   className={({ isActive }) => `w-full flex items-center gap-2.5 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all cursor-pointer ${isActive ? 'active-nav' : 'text-slate-600 hover:bg-slate-50 sidebar-item'}`}
                 >
-                  <Award size={18} /> Examinations
+                  <Award size={18} /> {t('sidebar.exams')}
                 </NavLink>
               )}
+
               {(hasPermission('Print Reports') || hasPermission('View Financial Reports')) && (
                 <NavLink 
                   to="/portal/reports"
                   onClick={() => setIsMobileMenuOpen(false)}
                   className={({ isActive }) => `w-full flex items-center gap-2.5 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all cursor-pointer ${isActive ? 'active-nav' : 'text-slate-600 hover:bg-slate-50 sidebar-item'}`}
                 >
-                  <CheckCircle2 size={18} /> Reports / PDF Exports
+                  <CheckCircle2 size={18} /> {t('sidebar.reports')}
                 </NavLink>
               )}
               {hasPermission('User Management') && (
@@ -2885,7 +2891,7 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                   onClick={() => setIsMobileMenuOpen(false)}
                   className={({ isActive }) => `w-full flex items-center gap-2.5 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all cursor-pointer ${isActive ? 'active-nav' : 'text-slate-600 hover:bg-slate-50 sidebar-item'}`}
                 >
-                  <Users size={18} /> Staff Management
+                  <Users size={18} /> {t('sidebar.staff')}
                 </NavLink>
               )}
               {hasPermission('School Settings') && (
@@ -2894,7 +2900,7 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                   onClick={() => setIsMobileMenuOpen(false)}
                   className={({ isActive }) => `w-full flex items-center gap-2.5 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all cursor-pointer ${isActive ? 'active-nav' : 'text-slate-600 hover:bg-slate-50 sidebar-item'}`}
                 >
-                  <Settings size={18} /> Settings
+                  <Settings size={18} /> {t('sidebar.settings')}
                 </NavLink>
               )}
             </>
@@ -2922,14 +2928,14 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                         <div className="bg-gradient-to-br from-indigo-500 to-indigo-600 p-5 rounded-2xl shadow-[0_8px_30px_-4px_rgba(99,102,241,0.4)] text-white border border-indigo-400">
                           <span className="text-white opacity-90"><Users size={20} /></span>
-                          <p className="text-[10px] font-bold text-white/80 uppercase tracking-wider mt-2">Students</p>
+                          <p className="text-[10px] font-bold text-white/80 uppercase tracking-wider mt-2">{t('dashboard.totalStudents')}</p>
                           <p className="text-3xl font-bold mt-1 text-white">{totalStudents}</p>
                         </div>
 
                         {!quranModeWithoutTeachers && (
                           <div className="bg-gradient-to-br from-blue-500 to-blue-600 p-5 rounded-2xl shadow-[0_8px_30px_-4px_rgba(59,130,246,0.4)] text-white border border-blue-400">
                             <span className="text-white opacity-90"><GraduationCap size={20} /></span>
-                            <p className="text-[10px] font-bold text-white/80 uppercase tracking-wider mt-2">Teachers</p>
+                            <p className="text-[10px] font-bold text-white/80 uppercase tracking-wider mt-2">{t('dashboard.totalTeachers')}</p>
                             <p className="text-3xl font-bold mt-1 text-white">{totalTeachers}</p>
                           </div>
                         )}
@@ -4478,13 +4484,13 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                     <div className="bg-white p-4 rounded-2xl border border-gray-100 card-shadow">
                       <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Total Collected</span>
                       <span className="text-xl lg:text-2xl font-extrabold text-green-600 block mt-1">
-                        ${orgFees.filter(f => f.status === 'paid' || f.status === 'approved').reduce((sum, f) => sum + f.amount, 0)}
+                        ${orgFees.filter(f => f.status === 'paid' || f.status === 'approved').reduce((sum, f) => sum + (Number(f.amount) || 0), 0)}
                       </span>
                     </div>
                     <div className="bg-white p-4 rounded-2xl border border-gray-100 card-shadow">
                       <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Pending / Outstanding</span>
                       <span className="text-xl lg:text-2xl font-extrabold text-red-500 block mt-1">
-                        ${orgFees.filter(f => f.status === 'unpaid').reduce((sum, f) => sum + f.amount, 0)}
+                        ${orgFees.filter(f => f.status === 'unpaid' || f.status === 'pending').reduce((sum, f) => sum + (Number(f.amount) || 0), 0)}
                       </span>
                     </div>
                   </>
@@ -4492,13 +4498,13 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                 <div className="bg-white p-4 rounded-2xl border border-gray-100 card-shadow">
                   <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Paid Invoices</span>
                   <span className="text-xl lg:text-2xl font-extrabold text-slate-800 block mt-1">
-                    {orgFees.filter(f => f.status === 'paid' || f.status === 'approved').length}
+                    {orgFees.filter(f => (f.status === 'paid' || f.status === 'approved') && !studentDebts[f.studentId]).length}
                   </span>
                 </div>
                 <div className="bg-white p-4 rounded-2xl border border-gray-100 card-shadow">
                   <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Unpaid Invoices</span>
                   <span className="text-xl lg:text-2xl font-extrabold text-slate-800 block mt-1">
-                    {orgFees.filter(f => f.status === 'unpaid').length}
+                    {orgFees.filter(f => f.status === 'unpaid' || f.status === 'pending').length}
                   </span>
                 </div>
               </div>
@@ -4537,7 +4543,7 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                     }`}
                   >
                     <CheckCircle2 size={14} className={feeSubTab === 'paid' ? 'text-green-500' : ''} />
-                    <span>Paid ({orgFees.filter(f => (f.status === 'approved' || f.status === 'paid') && !isFeeExpired(f)).length})</span>
+                    <span>Paid ({orgFees.filter(f => (f.status === 'paid' || f.status === 'approved') && !studentDebts[f.studentId]).length})</span>
                   </button>
                 </div>
               </div>
@@ -4585,7 +4591,7 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                       </thead>
                       <tbody className="divide-y divide-slate-100">
                         {pendingFeeRecords
-                          .filter(f => f.studentName.toLowerCase().includes(pendingSearch.toLowerCase()))
+                          .filter(f => (f.status === 'pending' || f.status === 'unpaid') && f.studentName.toLowerCase().includes(pendingSearch.toLowerCase()))
                           .map(fee => {
                             const expired = isFeeExpired(fee);
                             return (
@@ -4621,7 +4627,7 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                                     </button>
                                     <button
                                       onClick={async () => {
-                                        await updateFeePaymentStatus(fee.id, 'approved');
+                                        await updateFeePaymentStatus(fee.id, 'paid');
                                         showAlert(`Lacagta $${fee.amount} ee ${fee.studentName} waa la qabtay si guul leh!`, 'success');
                                         // Auto-send WhatsApp receipt link
                                         const student = orgStudents.find(s => s.id === fee.studentId);
@@ -4651,7 +4657,7 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                         {pendingFeeRecords.length === 0 && (
                           <tr>
                             <td colSpan={5} className="p-8 text-center text-slate-400 text-xs font-medium">
-                              Dhammaan ardayda way wada bixiyeen! No pending fees.
+                              Dhammaan fees-ka pending waa eber.
                             </td>
                           </tr>
                         )}
@@ -4741,7 +4747,7 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                       </thead>
                       <tbody className="divide-y divide-slate-100">
                         {orgFees
-                          .filter(f => (f.status === 'approved' || f.status === 'paid') && !isFeeExpired(f))
+                          .filter(f => (f.status === 'paid' || f.status === 'approved') && !studentDebts[f.studentId])
                           .filter(f => f.studentName.toLowerCase().includes(paidSearch.toLowerCase()) || f.invoiceNumber.toLowerCase().includes(paidSearch.toLowerCase()))
                           .map(fee => (
                             <tr key={fee.id} className="hover:bg-slate-50/40">
@@ -4783,7 +4789,7 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                               </td>
                             </tr>
                           ))}
-                        {orgFees.filter(f => (f.status === 'approved' || f.status === 'paid') && !isFeeExpired(f)).length === 0 && (
+                        {orgFees.filter(f => (f.status === 'paid' || f.status === 'approved') && !studentDebts[f.studentId]).length === 0 && (
                           <tr>
                             <td colSpan={5} className="p-8 text-center text-slate-400 text-xs font-medium">
                               Weli ma jiro wax lacag ah oo la bixiyay bishan.
@@ -5099,6 +5105,7 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
               </div>
             </div>
           )}
+
 
           {/* Tab 10: REPORTS */}
           {activeTab === 'reports' && (
@@ -6374,7 +6381,7 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
       {activeModal === 'receivePayment' && (() => {
         const now = new Date();
         const selectedStudentObj = orgStudents.find(s => s.id === paymentStudentId);
-        const studentUnpaidFees = orgFees.filter(f => f.studentId === paymentStudentId && f.status === 'unpaid').sort((a,b) => new Date(a.month).getTime() - new Date(b.month).getTime());
+        const studentUnpaidFees = orgFees.filter(f => f.studentId === paymentStudentId && (f.status === 'pending' || f.status === 'unpaid')).sort((a,b) => new Date(a.month).getTime() - new Date(b.month).getTime());
         const monthOptions = studentUnpaidFees.length > 0 ? studentUnpaidFees.map(f => f.month) : Array.from({ length: 12 }, (_, i) => {
           const d = new Date(now.getFullYear(), now.getMonth() - 6 + i, 1);
           return d.toLocaleString('en-US', { month: 'long' }) + ' ' + d.getFullYear();
@@ -7183,6 +7190,12 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
     </div>
   );
 }
+
+
+
+
+
+
 
 
 

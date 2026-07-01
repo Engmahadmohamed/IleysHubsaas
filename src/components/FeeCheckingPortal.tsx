@@ -5,7 +5,7 @@ import { useParams } from 'react-router-dom';
 
 export default function FeeCheckingPortal() {
   const { orgId } = useParams();
-  const { searchStudentFees, getOrganizationLogo } = useApp();
+  const { searchStudentFees } = useApp();
   
   const [studentIdInput, setStudentIdInput] = useState('');
   const [searchError, setSearchError] = useState('');
@@ -139,9 +139,6 @@ export default function FeeCheckingPortal() {
                 <div className="flex flex-wrap items-center justify-center md:justify-start gap-3 mt-3">
                   <span className="px-3 py-1 bg-slate-100 text-slate-600 rounded-full text-sm font-semibold font-mono border border-slate-200">
                     {foundStudent.studentId}
-                  </span>
-                  <span className="px-3 py-1 bg-blue-50 text-blue-700 rounded-full text-sm font-semibold border border-blue-100">
-                    Class: {foundStudent.classCode}
                   </span>
                 </div>
               </div>

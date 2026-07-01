@@ -109,7 +109,7 @@ interface AppContextType {
 
   saveAttendance: (record: Omit<AttendanceRecord, 'id' | 'createdAt'>) => void;
   approveFeePayment: (id: string) => void;
-  updateFeePaymentStatus: (id: string, status: 'unpaid' | 'approved' | 'cancelled') => Promise<void>;
+  updateFeePaymentStatus: (id: string, status: 'unpaid' | 'pending' | 'paid' | 'cancelled') => Promise<void>;
   addFeePayment: (studentId: string, amount: number, month: string) => Promise<FeeRecord | null>;
   approveSalaryPayment: (id: string) => void;
 
@@ -126,9 +126,18 @@ interface AppContextType {
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
-// Helper for generating custom human-friendly IDs
-const generateId = (prefix: string, index: number) => {
-  return `${prefix}-${1000 + index}`;
+// Generate a unique Student ID per organization.
+// Format: [2 letters from school name][4-digit number] — e.g. "IL1001"
+// NO dash. Unique per school (prefix ensures cross-school uniqueness).
+const generateStudentId = (orgName: string, countInOrg: number): string => {
+  // Take first 2 alphabetic characters from the org name, uppercase
+  const prefix = (orgName || 'XX')
+    .replace(/[^a-zA-Z]/g, '') // remove non-letters
+    .slice(0, 2)
+    .toUpperCase()
+    .padEnd(2, 'X'); // ensure always 2 chars
+  const num = String(1000 + countInOrg).padStart(4, '0');
+  return `${prefix}${num}`;
 };
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -886,12 +895,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Student Operations
   const addStudent = async (studentData: Omit<Student, 'id' | 'studentId' | 'createdAt'>) => {
     const orgId = studentData.organizationId;
-    const stuCount = students.filter(s => s.organizationId === orgId).length;
+    const orgName = currentOrg?.name || organizations.find(o => o.id === orgId)?.name || 'XX';
+
+    // Get real count from Firestore to ensure uniqueness (never rely on local state count)
+    let stuCount = 0;
+    try {
+      const snap = await getDocs(collection(db, 'organizations', orgId, 'students'));
+      stuCount = snap.size;
+    } catch (_) {
+      stuCount = students.filter(s => s.organizationId === orgId).length;
+    }
+
     const id = `std-${Date.now()}`;
+    const studentId = generateStudentId(orgName, stuCount + 1);
+
     const newStudent: Student = {
       ...studentData,
       id,
-      studentId: generateId('STU', stuCount + 1),
+      studentId,
       createdAt: new Date().toISOString()
     };
 
@@ -910,7 +931,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     try {
       await setDoc(doc(db, 'organizations', orgId, 'students', id), newStudent);
       await setDoc(doc(db, 'organizations', orgId, 'fees', feeId), newFee);
-      console.log('Successfully saved student and fee record to Firestore');
+      console.log('Successfully saved student and fee record to Firestore:', studentId);
     } catch (err) {
       console.error('Firestore student save error:', err);
     }
@@ -941,20 +962,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const bulkImportStudents = (studentsData: any[]) => {
     const orgId = currentUser?.organizationId || '';
     if (!orgId) return { successCount: 0, errors: ['No active organization context found.'] };
+    const orgName = currentOrg?.name || organizations.find(o => o.id === orgId)?.name || 'XX';
 
     let successCount = 0;
     const errors: string[] = [];
+    const baseCount = students.filter(s => s.organizationId === orgId).length;
 
     studentsData.forEach(async (row, i) => {
       if (!row.fullName) {
         errors.push(`Row ${i + 1}: Name is required`);
         return;
       }
-      const stuCount = students.filter(s => s.organizationId === orgId).length + successCount;
+      const stuCount = baseCount + successCount;
       const id = `std-${Date.now()}-${i}`;
       const newStu: Student = {
         id,
-        studentId: generateId('STU', stuCount + 1),
+        studentId: generateStudentId(orgName, stuCount + 1),
         fullName: row.fullName,
         studentPhone: row.studentPhone || '',
         parentPhone: row.parentPhone || '',
@@ -1357,7 +1380,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!record) return;
     try {
       await setDoc(doc(db, 'organizations', record.organizationId, 'fees', id), {
-        status: 'approved',
+        status: 'paid',
         paidAt: new Date().toISOString()
       }, { merge: true });
       console.log('Successfully approved fee payment in Firestore');
@@ -1366,13 +1389,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
-  const updateFeePaymentStatus = async (id: string, status: 'unpaid' | 'approved' | 'cancelled') => {
+  const updateFeePaymentStatus = async (id: string, status: 'unpaid' | 'pending' | 'paid' | 'cancelled') => {
     const record = feeRecords.find(f => f.id === id);
     if (!record) return;
     try {
       await setDoc(doc(db, 'organizations', record.organizationId, 'fees', id), {
         status,
-        paidAt: status !== 'unpaid' ? new Date().toISOString() : null
+        paidAt: status === 'paid' ? new Date().toISOString() : null
       }, { merge: true });
 
       if (status === 'cancelled') {
@@ -1382,7 +1405,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           studentId: record.studentId,
           studentName: record.studentName,
           amount: record.amount,
-          status: 'unpaid',
+          status: 'pending',
           invoiceNumber: `INV-${new Date().getFullYear()}-${Math.floor(Math.random() * 9000 + 1000)}`,
           month: record.month,
           organizationId: record.organizationId
@@ -1411,7 +1434,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       studentId: student.id,
       studentName: student.fullName,
       amount: amount,
-      status: 'approved',
+      status: 'paid',
       invoiceNumber: invoiceNumber,
       month: month,
       organizationId: orgId,
@@ -1566,8 +1589,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         feesList.push({ ...doc.data(), id: doc.id } as FeeRecord);
       });
       
-      // Sort fees by month/year descending
-      feesList.sort((a, b) => new Date(b.year, b.month - 1).getTime() - new Date(a.year, a.month - 1).getTime());
+      // Sort fees by month string descending (month is "June 2026" format)
+      feesList.sort((a, b) => {
+        const dateA = new Date(a.month || '').getTime() || 0;
+        const dateB = new Date(b.month || '').getTime() || 0;
+        return dateB - dateA;
+      });
       
       return { student, fees: feesList };
     } catch (err: any) {
@@ -1769,9 +1796,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       // Create some initial fee records
       const feeList = [
-        { id: 'fee-101', studentId: 's-1001', studentName: 'Abdirahman Ali Barre', invoiceNumber: 'INV-1001', amount: 25, month: new Date().toLocaleString('default', { month: 'long', year: 'numeric' }), status: 'approved', paidAt: new Date().toISOString(), transactionId: 'TXN-982183', paymentMethod: 'evc_plus', organizationId: orgId },
-        { id: 'fee-102', studentId: 's-1002', studentName: 'Fartun Mohamed Warsame', invoiceNumber: 'INV-1002', amount: 25, month: new Date().toLocaleString('default', { month: 'long', year: 'numeric' }), status: 'approved', paidAt: new Date().toISOString(), transactionId: 'TXN-982184', paymentMethod: 'e_dahab', organizationId: orgId },
-        { id: 'fee-103', studentId: 's-1003', studentName: 'Ahmed Hassan Duale', invoiceNumber: 'INV-1003', amount: 30, month: new Date().toLocaleString('default', { month: 'long', year: 'numeric' }), status: 'unpaid', organizationId: orgId }
+        { id: 'fee-101', studentId: 's-1001', studentName: 'Abdirahman Ali Barre', invoiceNumber: 'INV-1001', amount: 25, month: new Date().toLocaleString('default', { month: 'long', year: 'numeric' }), status: 'paid', paidAt: new Date().toISOString(), transactionId: 'TXN-982183', paymentMethod: 'evc_plus', organizationId: orgId },
+        { id: 'fee-102', studentId: 's-1002', studentName: 'Fartun Mohamed Warsame', invoiceNumber: 'INV-1002', amount: 25, month: new Date().toLocaleString('default', { month: 'long', year: 'numeric' }), status: 'paid', paidAt: new Date().toISOString(), transactionId: 'TXN-982184', paymentMethod: 'e_dahab', organizationId: orgId },
+        { id: 'fee-103', studentId: 's-1003', studentName: 'Ahmed Hassan Duale', invoiceNumber: 'INV-1003', amount: 30, month: new Date().toLocaleString('default', { month: 'long', year: 'numeric' }), status: 'pending', organizationId: orgId }
       ];
       for (const f of feeList) {
         await setDoc(doc(db, 'organizations', orgId, 'fees', f.id), f);
@@ -1818,7 +1845,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               studentId: student.id,
               studentName: student.fullName,
               amount: student.fee,
-              status: 'unpaid',
+              status: 'pending',
               invoiceNumber: `INV-${now.getFullYear()}-${Math.floor(Math.random() * 9000 + 1000)}`,
               month: monthStr,
               organizationId: orgId
@@ -1911,5 +1938,7 @@ export const useApp = () => {
   }
   return context;
 };
+
+
 
 
