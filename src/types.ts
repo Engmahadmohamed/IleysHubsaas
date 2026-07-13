@@ -38,6 +38,7 @@ export interface Student {
   dob: string;
   subjects: string[]; // List of subject IDs
   classSessions?: string[]; // List of Class Session IDs enrolled
+  roomId?: string; // For Quran school (single room assignment)
   fee: number;
   profilePhoto?: string;
   organizationId: string;
@@ -52,6 +53,7 @@ export interface Teacher {
   salary: number;
   subjects: string[]; // List of subject IDs
   rooms: string[]; // List of room numbers
+  roomId?: string; // For Quran school (single room assignment)
   timeSchedule: {
     day: string; // e.g. "Monday"
     startTime: string; // "08:00"

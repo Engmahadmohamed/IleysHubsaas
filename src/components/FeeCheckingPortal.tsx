@@ -94,7 +94,7 @@ export default function FeeCheckingPortal() {
                   type="text"
                   value={studentIdInput}
                   onChange={(e) => setStudentIdInput(e.target.value.toUpperCase())}
-                  placeholder="Geli Student ID-ga (Tusaale: STU-1234)"
+                  placeholder="Geli Student ID-ga (Tusaale: SII00001)"
                   className="w-full pl-11 pr-4 py-4 rounded-xl border border-slate-200 bg-slate-50 text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all font-mono uppercase text-lg"
                   required
                 />

@@ -18,7 +18,7 @@ export default function TeacherDetail() {
     return (
       <div className="max-w-4xl mx-auto p-8 text-center bg-white rounded-2xl border border-gray-100 card-shadow">
         <Users className="mx-auto text-slate-300 mb-4 animate-bounce" size={48} />
-        <h2 className="text-xl font-bold text-slate-800 mb-2">Macallinka Lama Helin (Teacher Not Found)</h2>
+        <h2 className="text-xl font-bold text-slate-800 mb-2">Teacher Not Found</h2>
         <p className="text-slate-500 text-sm mb-6">Magaalada ama aqoonsiga macallinka aad raadinayso ma jiro.</p>
         <button 
           onClick={() => navigate('/portal/teachers')}

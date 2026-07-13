@@ -5,7 +5,7 @@ import {
 } from '../types';
 import { db, auth, createSecondaryAuthUser, handleFirestoreError, OperationType } from '../firebase';
 import { 
-  doc, setDoc, updateDoc, deleteDoc, collection, collectionGroup, onSnapshot, getDoc, getDocs, query, where, limit
+  doc, setDoc, updateDoc, deleteDoc, collection, collectionGroup, onSnapshot, getDoc, getDocs, query, where, limit, runTransaction
 } from 'firebase/firestore';
 import { 
   signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, updatePassword, sendPasswordResetEmail, onAuthStateChanged 
@@ -107,7 +107,7 @@ interface AppContextType {
   updateRoom: (id: string, updates: Partial<Room>) => void;
   deleteRoom: (id: string) => void;
 
-  saveAttendance: (record: Omit<AttendanceRecord, 'id' | 'createdAt'>) => void;
+  saveAttendance: (record: AttendanceRecord | Omit<AttendanceRecord, 'id' | 'createdAt'>) => void;
   approveFeePayment: (id: string) => void;
   updateFeePaymentStatus: (id: string, status: 'unpaid' | 'pending' | 'paid' | 'cancelled') => Promise<void>;
   addFeePayment: (studentId: string, amount: number, month: string) => Promise<FeeRecord | null>;
@@ -127,16 +127,16 @@ interface AppContextType {
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 // Generate a unique Student ID per organization.
-// Format: [2 letters from school name][4-digit number] — e.g. "IL1001"
+// Format: [3 letters from school name][5-digit number] — e.g. "ALH00001"
 // NO dash. Unique per school (prefix ensures cross-school uniqueness).
 const generateStudentId = (orgName: string, countInOrg: number): string => {
-  // Take first 2 alphabetic characters from the org name, uppercase
-  const prefix = (orgName || 'XX')
+  // Take first 3 alphabetic characters from the org name, uppercase
+  const prefix = (orgName || 'XXX')
     .replace(/[^a-zA-Z]/g, '') // remove non-letters
-    .slice(0, 2)
+    .slice(0, 3)
     .toUpperCase()
-    .padEnd(2, 'X'); // ensure always 2 chars
-  const num = String(1000 + countInOrg).padStart(4, '0');
+    .padEnd(3, 'X'); // ensure always 3 chars
+  const num = String(countInOrg).padStart(5, '0');
   return `${prefix}${num}`;
 };
 
@@ -450,29 +450,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setTeachers(list);
       }, (error) => handleFirestoreError(error, OperationType.LIST, `organizations/${orgId}/teachers`));
 
-      if (currentUser.role === 'teacher') {
-        if (currentUser.teacherId) {
-          unsubSubjects = onSnapshot(
-            query(collection(db, 'organizations', orgId, 'subjects'), where('teacherId', '==', currentUser.teacherId)),
-            (snap) => {
-              const list: Subject[] = [];
-              snap.forEach((doc) => {
-                list.push({ ...doc.data(), id: doc.id } as Subject);
-              });
-              setSubjects(list);
-            },
-            (error) => handleFirestoreError(error, OperationType.LIST, `organizations/${orgId}/subjects`)
-          );
-        }
-      } else {
-        unsubSubjects = onSnapshot(collection(db, 'organizations', orgId, 'subjects'), (snap) => {
-          const list: Subject[] = [];
-          snap.forEach((doc) => {
-            list.push({ ...doc.data(), id: doc.id } as Subject);
-          });
-          setSubjects(list);
-        }, (error) => handleFirestoreError(error, OperationType.LIST, `organizations/${orgId}/subjects`));
-      }
+      unsubSubjects = onSnapshot(collection(db, 'organizations', orgId, 'subjects'), (snap) => {
+        const list: Subject[] = [];
+        snap.forEach((doc) => {
+          list.push({ ...doc.data(), id: doc.id } as Subject);
+        });
+        setSubjects(list);
+      }, (error) => handleFirestoreError(error, OperationType.LIST, `organizations/${orgId}/subjects`));
 
       unsubRooms = onSnapshot(collection(db, 'organizations', orgId, 'rooms'), (snap) => {
         const list: Room[] = [];
@@ -758,14 +742,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         await updatePassword(auth.currentUser, newPassword);
       }
 
-      const updatedProfile = { ...currentUser, password: newPassword };
+      // NOTE: We never store raw passwords in Firestore. Firebase Auth manages them.
+      const { password: _omit, ...profileWithoutPassword } = currentUser as any;
+      const updatedProfile = { ...profileWithoutPassword };
       setCurrentUser(updatedProfile);
 
-      await setDoc(doc(db, 'users', currentUser.uid), {
-        ...updatedProfile,
-        password: newPassword
-      }, { merge: true });
-      console.log('Successfully synced new password to Firestore for user:', currentUser.uid);
+      await setDoc(doc(db, 'users', currentUser.uid), updatedProfile, { merge: true });
+      console.log('Successfully changed password in Firebase Auth for user:', currentUser.uid);
 
     } catch (err: any) {
       console.error('Password change failed:', err);
@@ -861,7 +844,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       role: adminRole,
       organizationId: orgId,
       active: true,
-      password: pwd,
+      // Never store raw password in Firestore — Firebase Auth manages it
       createdAt: new Date().toISOString()
     };
 
@@ -897,17 +880,33 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const orgId = studentData.organizationId;
     const orgName = currentOrg?.name || organizations.find(o => o.id === orgId)?.name || 'XX';
 
-    // Get real count from Firestore to ensure uniqueness (never rely on local state count)
-    let stuCount = 0;
+    // Use atomic Firestore counter to guarantee sequential unique IDs (never duplicates)
+    let studentIdNum = 1;
+    const counterRef = doc(db, 'organizations', orgId, 'counters', 'students');
     try {
-      const snap = await getDocs(collection(db, 'organizations', orgId, 'students'));
-      stuCount = snap.size;
+      await runTransaction(db, async (transaction) => {
+        const counterSnap = await transaction.get(counterRef);
+        if (counterSnap.exists()) {
+          studentIdNum = (counterSnap.data().count || 0) + 1;
+        } else {
+          // First student — initialize by counting existing students
+          const snap = await getDocs(collection(db, 'organizations', orgId, 'students'));
+          studentIdNum = snap.size + 1;
+        }
+        transaction.set(counterRef, { count: studentIdNum }, { merge: true });
+      });
     } catch (_) {
-      stuCount = students.filter(s => s.organizationId === orgId).length;
+      // Fallback: use current size
+      try {
+        const snap = await getDocs(collection(db, 'organizations', orgId, 'students'));
+        studentIdNum = snap.size + 1;
+      } catch (__) {
+        studentIdNum = students.filter(s => s.organizationId === orgId).length + 1;
+      }
     }
 
     const id = `std-${Date.now()}`;
-    const studentId = generateStudentId(orgName, stuCount + 1);
+    const studentId = generateStudentId(orgName, studentIdNum);
 
     const newStudent: Student = {
       ...studentData,
@@ -916,15 +915,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       createdAt: new Date().toISOString()
     };
 
-    const feeId = `fee-${Date.now()}`;
+    const now = Date.now();
+    const feeId = `fee-${now}`;
+    const invoiceNumber = `INV-${new Date().getFullYear()}-${now.toString(36).toUpperCase().slice(-6)}`;
     const newFee: FeeRecord = {
       id: feeId,
       studentId: id,
       studentName: newStudent.fullName,
       amount: newStudent.fee,
       status: 'unpaid',
-      invoiceNumber: `INV-2026-${Math.floor(Math.random() * 9000 + 1000)}`,
-      month: new Date().toLocaleString('default', { month: 'long', year: 'numeric' }),
+      invoiceNumber,
+      month: new Date().toLocaleString('en-US', { month: 'long', year: 'numeric' }),
       organizationId: orgId
     };
 
@@ -938,7 +939,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const updateStudent = async (id: string, updates: Partial<Student>) => {
-    const orgId = currentUser?.organizationId || updates.organizationId;
+    // Always prefer the student's own orgId, then fall back to current user's org
+    const orgId = updates.organizationId || currentUser?.organizationId;
     if (!orgId) return;
     try {
       await setDoc(doc(db, 'organizations', orgId, 'students', id), updates, { merge: true });
@@ -959,7 +961,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
-  const bulkImportStudents = (studentsData: any[]) => {
+  const bulkImportStudents = async (studentsData: any[]): Promise<{ successCount: number; errors: string[] }> => {
     const orgId = currentUser?.organizationId || '';
     if (!orgId) return { successCount: 0, errors: ['No active organization context found.'] };
     const orgName = currentOrg?.name || organizations.find(o => o.id === orgId)?.name || 'XX';
@@ -968,10 +970,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const errors: string[] = [];
     const baseCount = students.filter(s => s.organizationId === orgId).length;
 
-    studentsData.forEach(async (row, i) => {
+    for (let i = 0; i < studentsData.length; i++) {
+      const row = studentsData[i];
       if (!row.fullName) {
         errors.push(`Row ${i + 1}: Name is required`);
-        return;
+        continue;
       }
       const stuCount = baseCount + successCount;
       const id = `std-${Date.now()}-${i}`;
@@ -990,33 +993,35 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         createdAt: new Date().toISOString()
       };
 
-      const feeId = `fee-${Date.now()}-${i}`;
+      const now = Date.now();
+      const feeId = `fee-${now}-${i}`;
+      const invoiceNum = `INV-${new Date().getFullYear()}-${now.toString(36).toUpperCase().slice(-5)}${i}`;
       const newFee: FeeRecord = {
         id: feeId,
         studentId: id,
         studentName: newStu.fullName,
         amount: newStu.fee,
         status: 'unpaid',
-        invoiceNumber: `INV-2026-${Math.floor(Math.random() * 9000 + 1000)}`,
-        month: new Date().toLocaleString('default', { month: 'long', year: 'numeric' }),
+        invoiceNumber: invoiceNum,
+        month: new Date().toLocaleString('en-US', { month: 'long', year: 'numeric' }),
         organizationId: orgId
       };
 
       try {
         await setDoc(doc(db, 'organizations', orgId, 'students', id), newStu);
         await setDoc(doc(db, 'organizations', orgId, 'fees', feeId), newFee);
+        successCount++;
       } catch (err) {
         console.error('Firestore bulk import error:', err);
+        errors.push(`Row ${i + 1}: Failed to save to database`);
       }
-
-      successCount++;
-    });
+    }
 
     return { successCount, errors };
   };
 
   // Teacher Operations
-  const addTeacher = async (teacherData: Omit<Teacher, 'id' | 'createdAt'>) => {
+  const addTeacher = async (teacherData: Omit<Teacher, 'id' | 'createdAt'>): Promise<string | null> => {
     const orgId = teacherData.organizationId;
     const id = `t-${Date.now()}`;
     const newTeacher: Teacher = {
@@ -1358,16 +1363,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   // Attendance Record Operations
-  const saveAttendance = async (record: Omit<AttendanceRecord, 'id' | 'createdAt'>) => {
+  const saveAttendance = async (record: AttendanceRecord | Omit<AttendanceRecord, 'id' | 'createdAt'>) => {
     const orgId = record.organizationId;
-    const id = `att-${Date.now()}`;
+    // Generate deterministic ID so multiple "Done" clicks for the same session/date overwrite the record instead of creating duplicates
+    const baseId = record.sessionId ? `att-${record.sessionId}-${record.date}` : `att-${Date.now()}`;
+    const id = ('id' in record) ? record.id : baseId;
     const newRecord: AttendanceRecord = {
       ...record,
       id,
-      createdAt: new Date().toISOString()
+      createdAt: ('createdAt' in record) ? record.createdAt : new Date().toISOString()
     };
     try {
-      await setDoc(doc(db, 'organizations', orgId, 'attendance', id), newRecord);
+      await setDoc(doc(db, 'organizations', orgId, 'attendance', id), newRecord, { merge: true });
       console.log('Successfully saved attendance to Firestore');
     } catch (err) {
       console.error('Firestore attendance save error:', err);
@@ -1491,16 +1498,29 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const existingIndex = examResults.findIndex(r => r.examId === examId);
     const id = existingIndex >= 0 ? examResults[existingIndex].id : `res-${Date.now()}`;
 
+    let finalResults = [...resultsList];
+    
+    // Merge if results already exist for this exam
+    if (existingIndex >= 0) {
+      const existingResults = examResults[existingIndex].results || [];
+      const newStudentIds = new Set(resultsList.map(r => r.studentId));
+      
+      // Keep previous marks for students that are NOT part of the new submission
+      const keptExistingResults = existingResults.filter(r => !newStudentIds.has(r.studentId));
+      
+      finalResults = [...keptExistingResults, ...resultsList];
+    }
+
     const newRecord: ExamResultRecord = {
       id,
       examId,
       examTitle: exam.title,
       subjectId: exam.subjectId,
       organizationId: orgId,
-      results: resultsList,
-      average,
+      results: finalResults,
+      average: finalResults.length > 0 ? Math.round((finalResults.reduce((sum, r) => sum + r.marks, 0) / finalResults.length) * 10) / 10 : 0,
       published: false,
-      createdAt: new Date().toISOString()
+      createdAt: existingIndex >= 0 ? examResults[existingIndex].createdAt : new Date().toISOString()
     };
 
     try {
@@ -1519,9 +1539,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const resultRecord = examResults.find(r => r.examId === examId);
 
     try {
+      // Mark the exam session as published
       await setDoc(doc(db, 'organizations', orgId, 'exam_sessions', examId), { published: true }, { merge: true });
+      
       if (resultRecord) {
+        // Publish the existing result record
         await setDoc(doc(db, 'organizations', orgId, 'exam_results', resultRecord.id), { published: true }, { merge: true });
+      } else {
+        // No results submitted yet — create a published placeholder so admin can still mark as published
+        const placeholderId = `res-${Date.now()}`;
+        await setDoc(doc(db, 'organizations', orgId, 'exam_results', placeholderId), {
+          id: placeholderId,
+          examId,
+          examTitle: exam.title,
+          subjectId: exam.subjectId || '',
+          organizationId: orgId,
+          results: [],
+          average: 0,
+          published: true,
+          createdAt: new Date().toISOString()
+        });
       }
       console.log('Successfully approved and published exam results in Firestore');
     } catch (err) {
@@ -1607,18 +1644,53 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const searchStudentResults = async (studentId: string): Promise<{ student: Student; results: any[]; subjects: Subject[] } | null> => {
+    if (!db) {
+      throw new Error('Database is not initialized.');
+    }
+
     try {
-      setLoading(true);
-      setError(null);
       const cleanId = studentId.trim().toUpperCase();
-      
+
       const studentsQuery = query(
         collectionGroup(db, 'students'),
         where('studentId', '==', cleanId),
         limit(1)
       );
-      
-      const studentSnap = await getDocs(studentsQuery);
+
+      let studentSnap;
+      try {
+        studentSnap = await getDocs(studentsQuery);
+      } catch (bloomErr: any) {
+        // Firestore BloomFilter internal error — retry once (keep limit ≤ 1 for public portal rules)
+        console.warn('BloomFilter error on collectionGroup, retrying...', bloomErr);
+        const retryQuery = query(
+          collectionGroup(db, 'students'),
+          where('studentId', '==', cleanId),
+          limit(1)
+        );
+        studentSnap = await getDocs(retryQuery);
+      }
+
+      // If not found by human-readable ID, fallback to internal 'id' (e.g., 'std-12345')
+      if (studentSnap.empty) {
+        const lowerId = cleanId.toLowerCase();
+        const fallbackQuery = query(
+          collectionGroup(db, 'students'),
+          where('id', '==', lowerId),
+          limit(1)
+        );
+        try {
+          studentSnap = await getDocs(fallbackQuery);
+        } catch (err) {
+          const fallbackRetryQuery = query(
+            collectionGroup(db, 'students'),
+            where('id', '==', lowerId),
+            limit(1)
+          );
+          studentSnap = await getDocs(fallbackRetryQuery);
+        }
+      }
+
       if (studentSnap.empty) {
         return null;
       }
@@ -1643,36 +1715,46 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         subjectsList.push({ ...doc.data(), id: doc.id } as Subject);
       });
       
+      const normalizeId = (value?: string) => (value || '').trim().toUpperCase();
+      const studentIds = new Set(
+        [student.id, student.studentId].map(normalizeId).filter(Boolean)
+      );
+
       const matchedResults: any[] = [];
       resultsList.forEach(record => {
-        if (record.published) {
-          if (record.subjectId && !student.subjects.includes(record.subjectId)) {
-            return;
-          }
-          const studentScore = record.results.find(res => res.studentId === student.id);
-          if (studentScore) {
-            const subject = subjectsList.find(s => s.id === record.subjectId);
-            matchedResults.push({
-              examTitle: record.examTitle,
-              subjectName: subject ? subject.name : 'General Exam',
-              marks: studentScore.marks,
-              grade: studentScore.grade,
-              average: record.average,
-            });
-          }
+        if (!record.published) return;
+
+        const studentScore = record.results?.find(res =>
+          studentIds.has(normalizeId(res.studentId))
+        );
+        if (studentScore) {
+          const subject = subjectsList.find(s => s.id === record.subjectId);
+          matchedResults.push({
+            examTitle: record.examTitle,
+            subjectName: subject ? subject.name : 'General Exam',
+            marks: studentScore.marks,
+            grade: studentScore.grade,
+            average: record.average,
+          });
         }
       });
       
+      // Fetch org name for display
+      let orgName = '';
+      try {
+        const orgSnap = await getDoc(doc(db, 'organizations', orgId));
+        if (orgSnap.exists()) orgName = orgSnap.data().name || '';
+      } catch (_) { /* non-critical */ }
+
       return {
         student,
         results: matchedResults,
-        subjects: subjectsList
+        subjects: subjectsList,
+        orgName,
       };
     } catch (err: any) {
       console.error('Error during student results search:', err);
       throw err;
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -1811,9 +1893,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setLoading(false);
     }
   };
-  // Auto-sync missing fees for active students
+  // Auto-sync missing fees for active students (non-superadmin only)
   useEffect(() => {
-    if (!currentUser?.organizationId || students.length === 0 || feeRecords.length === 0) return;
+    if (!currentUser?.organizationId || currentUser.role === 'superadmin' || students.length === 0 || feeRecords.length === 0) return;
     
     const orgId = currentUser.organizationId;
     const timer = setTimeout(() => {
@@ -1824,7 +1906,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const current = new Date(startDate);
         current.setDate(1); // avoid edge cases
         while (current <= endDate) {
-          months.push(current.toLocaleString('default', { month: 'long', year: 'numeric' }));
+          months.push(current.toLocaleString('en-US', { month: 'long', year: 'numeric' }));
           current.setMonth(current.getMonth() + 1);
         }
         return months;
@@ -1839,14 +1921,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         monthsToBill.forEach(monthStr => {
           const hasFeeForMonth = feeRecords.some(f => f.studentId === student.id && f.month === monthStr && f.status !== 'cancelled');
           if (!hasFeeForMonth) {
-            const feeId = `fee-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
+            const ts = Date.now();
+            const feeId = `fee-${ts}-${Math.floor(Math.random() * 10000)}`;
+            const invoiceNumber = `INV-${now.getFullYear()}-${ts.toString(36).toUpperCase().slice(-6)}`;
             const newFee: FeeRecord = {
               id: feeId,
               studentId: student.id,
               studentName: student.fullName,
               amount: student.fee,
               status: 'pending',
-              invoiceNumber: `INV-${now.getFullYear()}-${Math.floor(Math.random() * 9000 + 1000)}`,
+              invoiceNumber,
               month: monthStr,
               organizationId: orgId
             };

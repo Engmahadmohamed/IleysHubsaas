@@ -18,7 +18,7 @@ export default function StudentDetail() {
     return (
       <div className="max-w-4xl mx-auto p-8 text-center bg-white rounded-2xl border border-gray-100 card-shadow">
         <GraduationCap className="mx-auto text-slate-300 mb-4 animate-bounce" size={48} />
-        <h2 className="text-xl font-bold text-slate-800 mb-2">Ardayga Lama Helin (Student Not Found)</h2>
+        <h2 className="text-xl font-bold text-slate-800 mb-2">Student Not Found</h2>
         <p className="text-slate-500 text-sm mb-6">Magaalada ama aqoonsiga ardayga aad raadinayso ma jiro.</p>
         <button 
           onClick={() => navigate('/portal/students')}
@@ -85,7 +85,7 @@ export default function StudentDetail() {
           <ArrowLeft size={16} /> Back to Student Directory (Ardayda)
         </Link>
         <span className="text-xs font-mono font-bold px-3 py-1 bg-gray-100 rounded-full text-slate-600">
-          SYSTEM ID: {student.id}
+          ID: {student.studentId || student.id}
         </span>
       </div>
 
@@ -121,7 +121,7 @@ export default function StudentDetail() {
 
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 pt-2">
             <div className="p-3 bg-slate-50 rounded-xl">
-              <span className="block text-[10px] uppercase font-bold text-slate-400">Gender (Galada)</span>
+              <span className="block text-[10px] uppercase font-bold text-slate-400">Gender</span>
               <span className="text-sm font-semibold capitalize text-slate-700">{student.gender === 'male' ? 'Muxuu' : 'Muxuud'}</span>
             </div>
             <div className="p-3 bg-slate-50 rounded-xl">

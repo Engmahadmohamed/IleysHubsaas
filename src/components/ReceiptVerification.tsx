@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { useSearchParams, Link } from 'react-router-dom';
-import { CheckCircle, ShieldCheck, Calendar, Award, GraduationCap, ArrowLeft, Download, Loader2, ShieldAlert, AlertCircle } from 'lucide-react';
+import { useSearchParams } from 'react-router-dom';
+import { CheckCircle, ShieldCheck, Calendar, Award, GraduationCap, Download, Loader2, ShieldAlert, AlertCircle } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import { doc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from '../firebase';
@@ -58,6 +58,21 @@ export default function ReceiptVerification() {
           const feeSnap = await getDoc(doc(db, 'organizations', orgId, 'fees', feeId));
           if (feeSnap.exists()) {
             const data = feeSnap.data() as FeeData;
+            
+            if (data.studentId) {
+              try {
+                const studentSnap = await getDoc(doc(db, 'organizations', orgId, 'students', data.studentId));
+                if (studentSnap.exists()) {
+                  const sData = studentSnap.data();
+                  if (sData.studentId) {
+                    (data as any).studentDisplayId = sData.studentId;
+                  }
+                }
+              } catch (e) {
+                console.error("Failed to fetch student for receipt", e);
+              }
+            }
+            
             setFeeData(data);
             
             if (data.studentId) {
@@ -215,6 +230,7 @@ export default function ReceiptVerification() {
       const rowH = 7.5;
       const rows = [
         { label: 'ARDAYGA / STUDENT', value: fee.studentName },
+        ...(fee.studentId ? [{ label: 'ID / AQOONSIGA', value: (fee as any).studentDisplayId || fee.studentId }] : []),
         { label: 'INVOICE NO / RISIIDH', value: fee.invoiceNumber },
         { label: 'BISHA / MONTH', value: fee.month },
         { label: 'TAARIIKHDA / DATE', value: paymentDateStr },
@@ -312,9 +328,6 @@ export default function ReceiptVerification() {
               <AlertCircle size={16} className="text-rose-500 shrink-0 mt-0.5" />
               <p className="text-xs text-rose-700 font-medium">{fetchError}</p>
             </div>
-            <Link to="/" className="inline-flex items-center gap-1.5 text-xs text-slate-500 hover:text-slate-800 font-bold transition-all">
-              <ArrowLeft size={14} /> Go to System Login
-            </Link>
           </div>
         </div>
       </div>
@@ -328,9 +341,6 @@ export default function ReceiptVerification() {
         <div className="max-w-sm w-full bg-white rounded-3xl shadow-xl p-6 text-center space-y-3">
           <ShieldAlert size={36} className="text-slate-400 mx-auto" />
           <p className="text-slate-600 font-semibold">Linkiga waa khalad ah ama waa faaruq.</p>
-          <Link to="/" className="inline-flex items-center gap-1.5 text-xs text-slate-500 hover:text-slate-800 font-bold transition-all">
-            <ArrowLeft size={14} /> Go to System Login
-          </Link>
         </div>
       </div>
     );
@@ -411,7 +421,7 @@ export default function ReceiptVerification() {
           <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100 space-y-3">
             {[
               { label: 'Student / Ardayga', value: fee.studentName },
-              ...(fee.studentId ? [{ label: 'Student ID / Aqoonsiga', value: fee.studentId }] : []),
+              ...(fee.studentId ? [{ label: 'Student ID / Aqoonsiga', value: (fee as any).studentDisplayId || fee.studentId }] : []),
               { label: 'Invoice No / Risiidh', value: fee.invoiceNumber },
               { label: 'Billing Month / Bisha', value: fee.month },
               { label: 'Paid Date / Taariikhda', value: paymentDateStr },
@@ -457,13 +467,6 @@ export default function ReceiptVerification() {
               <><Download size={15} /><span>Soo Degso Risiidhka PDF ah</span></>
             )}
           </button>
-        </div>
-
-        {/* Footer */}
-        <div className="px-5 pb-4 text-center">
-          <Link to="/" className="inline-flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-700 font-bold transition-all">
-            <ArrowLeft size={13} /> Go to System Login
-          </Link>
         </div>
       </div>
 

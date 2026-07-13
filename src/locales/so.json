@@ -20,13 +20,78 @@
     "schoolAdmin": "Maamulaha Iskuulka",
     "search": "Raadi..."
   },
+  "tabs": {
+    "students": "Maamulka Ardayda",
+    "teachers": "Maamulka Macalimiinta",
+    "subjects": "Maamulka Maadooyinka",
+    "classes": "Maamulka Fasalada",
+    "rooms": "Maamulka Qolalka",
+    "attendance": "Diiwaanka Imaanshaha",
+    "fees": "Maamulka Lacagaha",
+    "salary": "Maamulka Mushaharka",
+    "exams": "Nidaamka Imtixaanada",
+    "reports": "Warbixinada System-ka",
+    "settings": "Settings-ka System-ka"
+  },
   "dashboard": {
+    "title": "Kormeerka Guud (Dashboard)",
     "totalStudents": "Tirada Ardayda",
     "totalTeachers": "Tirada Macalimiinta",
     "activeClasses": "Fasalada Furan",
     "todayAttendance": "Imaanshaha Maanta",
     "recentActivity": "Dhaqdhaqaaqa Dhow",
-    "quickActions": "Tallaabooyinka Degdega ah"
+    "quickActions": "Tallaabooyinka Degdega ah",
+    "monthlyRevenue": "Dakhliga Bisha",
+    "outstandingFees": "Lacagaha Lagu Lenyahay"
+  },
+  "students": {
+    "addNew": "Diiwaangeli Arday Cusub",
+    "searchPlaceholder": "Ku raadi Magaca ama ID...",
+    "notFound": "Lama helin arday",
+    "updated": "Xogta ardayga si guul leh ayaa loo cusbooneysiiyay.",
+    "added": "Arday cusub ayaa la diiwaangeliyay.",
+    "deleted": "Ardayga waa la tirtiray.",
+    "selectFirst": "Fadlan marka hore dooro ardayga!"
+  },
+  "teachers": {
+    "addNew": "Diiwaangeli Macalin Cusub",
+    "searchPlaceholder": "Raadi macalin...",
+    "notFound": "Lama helin macalin",
+    "updated": "Xogta macalinka waa la cusbooneysiiyay.",
+    "added": "Macalin cusub ayaa la diiwaangeliyay.",
+    "deleted": "Macalinka waa la tirtiray."
+  },
+  "attendance": {
+    "takeAttendance": "Qaado Xaadirinta",
+    "records": "Diiwaanka Xaadirinta",
+    "detailed": "Faahfaahin Dheeraad ah",
+    "dailyAbsentees": "Ardayda Maqan Maalintaas",
+    "consecutiveAbsences": "Maqnaanshaha Xiriirka ah",
+    "log": "Diiwaanka Xaadirinta",
+    "description": "Diiwaangeli xaadirinta maalin walba, eeg oo falanqee xogta."
+  },
+  "fees": {
+    "pending": "Lacagaha Dhiman",
+    "overdue": "Deymaha",
+    "paid": "Lacagaha la Bixiyay",
+    "downloadAll": "Dhammaan Soo Deji (PDF)",
+    "paymentRecorded": "Lacag bixinta si guul leh ayaa loo diiwaangeliyay."
+  },
+  "salary": {
+    "description": "Maaree mishaaraadka macalimiinta oo ay ku jiraan bixinta iyo diiwaannadda."
+  },
+  "exams": {
+    "newExam": "Imtixaan Cusub",
+    "results": "Natiijooyinka"
+  },
+  "staff": {
+    "registered": "Shaqaalaha Diiwaan Gashan",
+    "permissions": "Awoodaha",
+    "addNew": "Kudar Shaqaale Cusub",
+    "name": "Magaca Shaqaalaha",
+    "email": "Email-ka Shaqaalaha",
+    "designation": "Xilka Shaqaalaha",
+    "tempPassword": "Password Ku-meel-gaar ah"
   },
   "common": {
     "add": "Kudar Cusub",
@@ -36,6 +101,44 @@
     "cancel": "Ka Noqo",
     "search": "Raadi",
     "status": "Xaaladda",
-    "action": "Tallaabo"
+    "action": "Tallaabo",
+    "confirm": "Xaqiiji",
+    "close": "Xir",
+    "view": "Eeg Xogta",
+    "print": "Daabac PDF",
+    "download": "Dejiso",
+    "upload": "Soo Geli Excel / CSV",
+    "success": "Waa Lagu Guuleystay!",
+    "error": "Cilad Ayaa Dhacday!",
+    "yes": "Haa",
+    "no": "Maya",
+    "name": "Magaca",
+    "phone": "Taleefanka",
+    "email": "Email",
+    "gender": "Jinsiga",
+    "date": "Taariikhda",
+    "class": "Fasalka",
+    "subject": "Maadada",
+    "room": "Qolka",
+    "schedule": "Wakhtiga",
+    "address": "Cinwaanka",
+    "password": "Ereyga Sirta ah",
+    "noData": "Xog lama helin.",
+    "loading": "Soo raraya..."
+  },
+  "settings": {
+    "title": "Settings-ka System-ka",
+    "profileSettings": "Qaybta Profile-kaaga",
+    "changePassword": "Bedel Password-ka",
+    "securityNotice": "Amnigaaga awgeed, password-ka si toos ah halkan ugama bedeli kartid. Waxaan kugu soo direynaa email ay ku jiraan tilmaamaha lagu bedelo ereygaaga sirta ah.",
+    "emailToSend": "Email-ka Loo Dirayo",
+    "sendCode": "Dir Code-ka",
+    "fullName": "Magaca oo Buuxa",
+    "role": "Doorka / Shaqada",
+    "phone": "Numbarka Taleefanka",
+    "updateProfile": "Cusbooneysii Profile-ka",
+    "language": "Dooro Luuqadda",
+    "schoolSettings": "Astaamaha Dugsiga",
+    "changeName": "Bedel Magacaaga"
   }
 }

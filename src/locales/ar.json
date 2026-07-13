@@ -2,9 +2,9 @@
   "sidebar": {
     "dashboard": "لوحة القيادة",
     "students": "الطلاب",
-    "teachers": "المعلمون",
-    "subjects": "المواد",
-    "classes": "الفصول والقاعات",
+    "teachers": "المعلمين",
+    "subjects": "المواد الدراسية",
+    "classes": "الفصول والغرف",
     "attendance": "الحضور",
     "fees": "الرسوم الدراسية",
     "salary": "رواتب المعلمين",
@@ -12,7 +12,7 @@
     "reports": "التقارير",
     "staff": "إدارة الموظفين",
     "settings": "الإعدادات",
-    "support": "المساعدة والدعم",
+    "support": "الدعم والمساعدة",
     "logout": "تسجيل الخروج"
   },
   "header": {
@@ -20,13 +20,78 @@
     "schoolAdmin": "مدير المدرسة",
     "search": "بحث..."
   },
+  "tabs": {
+    "students": "إدارة الطلاب",
+    "teachers": "إدارة المعلمين",
+    "subjects": "إدارة المواد",
+    "classes": "إدارة الفصول",
+    "rooms": "إدارة الغرف",
+    "attendance": "سجل الحضور",
+    "fees": "إدارة الرسوم",
+    "salary": "إدارة الرواتب",
+    "exams": "إعداد الامتحانات",
+    "reports": "تقارير النظام",
+    "settings": "إعدادات النظام"
+  },
   "dashboard": {
+    "title": "نظرة عامة",
     "totalStudents": "إجمالي الطلاب",
     "totalTeachers": "إجمالي المعلمين",
     "activeClasses": "الفصول النشطة",
     "todayAttendance": "حضور اليوم",
     "recentActivity": "النشاط الأخير",
-    "quickActions": "إجراءات سريعة"
+    "quickActions": "إجراءات سريعة",
+    "monthlyRevenue": "الإيرادات الشهرية",
+    "outstandingFees": "الرسوم المستحقة"
+  },
+  "students": {
+    "addNew": "إضافة طالب جديد",
+    "searchPlaceholder": "ابحث بالاسم أو المعرف...",
+    "notFound": "لم يتم العثور على طلاب",
+    "updated": "تم تحديث بيانات الطالب بنجاح.",
+    "added": "تم تسجيل طالب جديد.",
+    "deleted": "تم حذف الطالب.",
+    "selectFirst": "الرجاء تحديد طالب أولاً!"
+  },
+  "teachers": {
+    "addNew": "إضافة معلم جديد",
+    "searchPlaceholder": "ابحث عن معلم...",
+    "notFound": "لم يتم العثور على معلمين",
+    "updated": "تم تحديث بيانات المعلم.",
+    "added": "تم تسجيل معلم جديد.",
+    "deleted": "تم حذف المعلم."
+  },
+  "attendance": {
+    "takeAttendance": "تسجيل الحضور",
+    "records": "سجلات الحضور",
+    "detailed": "تقرير مفصل",
+    "dailyAbsentees": "الغائبون اليوم",
+    "consecutiveAbsences": "الغيابات المتتالية",
+    "log": "سجل الحضور",
+    "description": "سجّل الحضور اليومي وراجع وحلّل البيانات."
+  },
+  "fees": {
+    "pending": "الرسوم المعلقة",
+    "overdue": "الرسوم المتأخرة",
+    "paid": "الرسوم المدفوعة",
+    "downloadAll": "تنزيل الكل (PDF)",
+    "paymentRecorded": "تم تسجيل الدفع بنجاح."
+  },
+  "salary": {
+    "description": "إدارة رواتب المعلمين بما في ذلك المدفوعات والسجلات."
+  },
+  "exams": {
+    "newExam": "امتحان جديد",
+    "results": "النتائج"
+  },
+  "staff": {
+    "registered": "الموظفون المسجلون",
+    "permissions": "الصلاحيات",
+    "addNew": "إضافة موظف جديد",
+    "name": "اسم الموظف",
+    "email": "بريد الموظف",
+    "designation": "المنصب",
+    "tempPassword": "كلمة مرور مؤقتة"
   },
   "common": {
     "add": "إضافة جديد",
@@ -36,6 +101,44 @@
     "cancel": "إلغاء",
     "search": "بحث",
     "status": "الحالة",
-    "action": "إجراءات"
+    "action": "إجراءات",
+    "confirm": "تأكيد",
+    "close": "إغلاق",
+    "view": "عرض التفاصيل",
+    "print": "طباعة PDF",
+    "download": "تنزيل",
+    "upload": "رفع Excel / CSV",
+    "success": "نجاح!",
+    "error": "خطأ!",
+    "yes": "نعم",
+    "no": "لا",
+    "name": "الاسم",
+    "phone": "الهاتف",
+    "email": "البريد الإلكتروني",
+    "gender": "الجنس",
+    "date": "التاريخ",
+    "class": "الفصل",
+    "subject": "المادة",
+    "room": "الغرفة",
+    "schedule": "الجدول",
+    "address": "العنوان",
+    "password": "كلمة المرور",
+    "noData": "لا توجد بيانات.",
+    "loading": "جارٍ التحميل..."
+  },
+  "settings": {
+    "title": "إعدادات النظام",
+    "profileSettings": "إعدادات الملف الشخصي",
+    "changePassword": "تغيير كلمة المرور",
+    "securityNotice": "لأسباب أمنية، لا يمكنك تغيير كلمة المرور مباشرة. سنرسل لك بريدًا إلكترونيًا يحتوي على إرشادات إعادة التعيين.",
+    "emailToSend": "عنوان البريد الإلكتروني",
+    "sendCode": "إرسال رابط إعادة التعيين",
+    "fullName": "الاسم الكامل",
+    "role": "الدور / المنصب",
+    "phone": "رقم الهاتف",
+    "updateProfile": "تحديث الملف الشخصي",
+    "language": "تفضيل اللغة",
+    "schoolSettings": "إعدادات المدرسة",
+    "changeName": "تغيير الاسم"
   }
 }

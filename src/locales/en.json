@@ -20,13 +20,78 @@
     "schoolAdmin": "School Admin",
     "search": "Search..."
   },
+  "tabs": {
+    "students": "Students Management",
+    "teachers": "Teachers Management",
+    "subjects": "Subjects Management",
+    "classes": "Classes Management",
+    "rooms": "Rooms Management",
+    "attendance": "Attendance Tracking",
+    "fees": "Fee Management",
+    "salary": "Salary Management",
+    "exams": "Examination Setup",
+    "reports": "System Reports",
+    "settings": "System Settings"
+  },
   "dashboard": {
+    "title": "Dashboard Overview",
     "totalStudents": "Total Students",
     "totalTeachers": "Total Teachers",
     "activeClasses": "Active Classes",
     "todayAttendance": "Today's Attendance",
     "recentActivity": "Recent Activity",
-    "quickActions": "Quick Actions"
+    "quickActions": "Quick Actions",
+    "monthlyRevenue": "Monthly Revenue",
+    "outstandingFees": "Outstanding Fees"
+  },
+  "students": {
+    "addNew": "Add New Student",
+    "searchPlaceholder": "Search by name or ID...",
+    "notFound": "No students found",
+    "updated": "Student record updated successfully.",
+    "added": "New student has been registered.",
+    "deleted": "Student deleted.",
+    "selectFirst": "Please select a student first!"
+  },
+  "teachers": {
+    "addNew": "Add New Teacher",
+    "searchPlaceholder": "Search teacher...",
+    "notFound": "No teachers found",
+    "updated": "Teacher record updated.",
+    "added": "New teacher registered.",
+    "deleted": "Teacher deleted."
+  },
+  "attendance": {
+    "takeAttendance": "Take Attendance",
+    "records": "Attendance Records",
+    "detailed": "Detailed Report",
+    "dailyAbsentees": "Daily Absentees",
+    "consecutiveAbsences": "Consecutive Absences",
+    "log": "Attendance Log",
+    "description": "Record daily attendance, view and analyze attendance data."
+  },
+  "fees": {
+    "pending": "Pending Fees",
+    "overdue": "Overdue Fees",
+    "paid": "Paid Fees",
+    "downloadAll": "Download All (PDF)",
+    "paymentRecorded": "Payment recorded successfully."
+  },
+  "salary": {
+    "description": "Manage teacher salaries including payments and records."
+  },
+  "exams": {
+    "newExam": "New Exam",
+    "results": "Results"
+  },
+  "staff": {
+    "registered": "Registered Staff",
+    "permissions": "Permissions",
+    "addNew": "Add Staff Member",
+    "name": "Staff Name",
+    "email": "Staff Email",
+    "designation": "Designation",
+    "tempPassword": "Temporary Password"
   },
   "common": {
     "add": "Add New",
@@ -36,6 +101,44 @@
     "cancel": "Cancel",
     "search": "Search",
     "status": "Status",
-    "action": "Actions"
+    "action": "Actions",
+    "confirm": "Confirm",
+    "close": "Close",
+    "view": "View Details",
+    "print": "Print PDF",
+    "download": "Download",
+    "upload": "Upload Excel / CSV",
+    "success": "Success!",
+    "error": "An error occurred!",
+    "yes": "Yes",
+    "no": "No",
+    "name": "Name",
+    "phone": "Phone",
+    "email": "Email",
+    "gender": "Gender",
+    "date": "Date",
+    "class": "Class",
+    "subject": "Subject",
+    "room": "Room",
+    "schedule": "Schedule",
+    "address": "Address",
+    "password": "Password",
+    "noData": "No data found.",
+    "loading": "Loading..."
+  },
+  "settings": {
+    "title": "System Settings",
+    "profileSettings": "Profile Settings",
+    "changePassword": "Change Password",
+    "securityNotice": "For security reasons, you cannot change your password directly here. We will send you an email with instructions to reset it.",
+    "emailToSend": "Email Address",
+    "sendCode": "Send Reset Link",
+    "fullName": "Full Name",
+    "role": "Role / Position",
+    "phone": "Phone Number",
+    "updateProfile": "Update Profile",
+    "language": "Language Preference",
+    "schoolSettings": "School Settings",
+    "changeName": "Change Display Name"
   }
 }

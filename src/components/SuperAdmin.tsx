@@ -380,16 +380,7 @@ export default function SuperAdmin() {
 
                     <td className="p-4 text-right">
                       <div className="inline-flex items-center gap-1.5">
-                        <button
-                          onClick={() => {
-                            selectActiveOrg(org);
-                            navigate('/portal/dashboard');
-                          }}
-                          title="Geli Maamulka Portal-ka"
-                          className="flex items-center gap-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-2.5 py-1 rounded-lg text-[11px] cursor-pointer transition-colors shadow-xs shrink-0"
-                        >
-                          <Layers size={11} /> Geli Portal-ka
-                        </button>
+                        {/* Removed Geli Portal-ka button to enforce strict login requirements */}
                         <button
                           onClick={() => toggleStatus(org)}
                           title="Toggle Status (Suspend/Activate)"

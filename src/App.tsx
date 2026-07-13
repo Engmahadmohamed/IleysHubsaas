@@ -270,22 +270,59 @@ function SuperAdminLoginLayout() {
 
 function AppContent() {
   const { currentUser, loading } = useApp();
+  const location = useLocation();
+  const isPublicPortal =
+    location.pathname === '/results' ||
+    location.pathname === '/verify-receipt' ||
+    location.pathname.startsWith('/check-fee');
 
-  if (loading && !currentUser) {
+  if (loading && !currentUser && !isPublicPortal) {
     return (
-      <div className="min-h-screen bg-[#fcfcfd] flex flex-col items-center justify-center p-4">
-        <div className="flex flex-col items-center space-y-4">
-          <div className="inline-flex p-3 bg-black text-white rounded-2xl shadow-sm animate-pulse">
-            <div className="w-8 h-8 flex items-center justify-center">
-              <div className="w-5 h-5 border-2 border-white rounded-md"></div>
-            </div>
+      <div className="min-h-screen bg-[#fcfcfd] flex">
+        {/* Sidebar Skeleton (hidden on mobile) */}
+        <div className="hidden md:flex flex-col w-64 bg-white border-r border-slate-100 p-4 space-y-6">
+          <div className="h-8 bg-slate-200 rounded-xl w-3/4 animate-pulse"></div>
+          <div className="space-y-3 mt-8">
+            <div className="h-10 bg-slate-100 rounded-xl w-full animate-pulse"></div>
+            <div className="h-10 bg-slate-100 rounded-xl w-full animate-pulse"></div>
+            <div className="h-10 bg-slate-100 rounded-xl w-full animate-pulse"></div>
+            <div className="h-10 bg-slate-100 rounded-xl w-full animate-pulse"></div>
+            <div className="h-10 bg-slate-100 rounded-xl w-full animate-pulse"></div>
           </div>
-          <div className="flex items-center gap-2">
-            <div className="w-2 h-2 bg-black rounded-full animate-bounce [animation-delay:-0.3s]"></div>
-            <div className="w-2 h-2 bg-black rounded-full animate-bounce [animation-delay:-0.15s]"></div>
-            <div className="w-2 h-2 bg-black rounded-full animate-bounce"></div>
+        </div>
+        
+        {/* Main Content Skeleton */}
+        <div className="flex-1 flex flex-col p-4 md:p-8 space-y-6 overflow-hidden">
+          {/* Header */}
+          <div className="flex justify-between items-center mb-4">
+            <div className="h-8 bg-slate-200 rounded-xl w-1/3 animate-pulse"></div>
+            <div className="h-10 w-10 bg-slate-200 rounded-full animate-pulse"></div>
           </div>
-          <p className="text-xs text-slate-400 font-semibold tracking-wider uppercase font-mono">Xaqiijinta Ammaanka...</p>
+          
+          {/* Stats Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            {[1, 2, 3, 4].map(i => (
+              <div key={i} className="h-28 bg-white border border-slate-100 rounded-2xl p-5 flex flex-col justify-between">
+                <div className="flex justify-between items-center">
+                  <div className="h-4 bg-slate-200 rounded w-1/2 animate-pulse"></div>
+                  <div className="h-8 w-8 bg-slate-100 rounded-lg animate-pulse"></div>
+                </div>
+                <div className="h-8 bg-slate-200 rounded-lg w-1/3 animate-pulse"></div>
+              </div>
+            ))}
+          </div>
+          
+          {/* Main Content Area */}
+          <div className="bg-white border border-slate-100 rounded-2xl flex-1 p-6 flex flex-col space-y-4">
+            <div className="h-6 bg-slate-200 rounded-lg w-1/4 animate-pulse mb-4"></div>
+            {[1, 2, 3, 4, 5].map(i => (
+              <div key={i} className="flex gap-4">
+                <div className="h-12 bg-slate-100 rounded-xl w-1/4 animate-pulse"></div>
+                <div className="h-12 bg-slate-100 rounded-xl w-1/2 animate-pulse"></div>
+                <div className="h-12 bg-slate-100 rounded-xl w-1/4 animate-pulse"></div>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
     );
@@ -392,23 +429,7 @@ function RoutesContainer({ currentUser }: { currentUser: any }) {
     },
     {
       path: '/results',
-      element: (
-        <div className="relative">
-          <div className="bg-slate-900 p-3 flex justify-between items-center text-white text-xs border-b border-slate-800">
-            <div className="flex items-center gap-1">
-              <GraduationCap size={15} className="text-white" />
-              <span className="font-bold">Student Transcript Access</span>
-            </div>
-            <Link 
-              to="/"
-              className="bg-black hover:bg-slate-800 text-white font-semibold px-3 py-1 rounded-lg text-xs cursor-pointer border border-slate-700"
-            >
-              ← Back to System Login
-            </Link>
-          </div>
-          <ResultPortal />
-        </div>
-      )
+      element: <ResultPortal />
     },
     {
       path: '/check-fee/:orgId',

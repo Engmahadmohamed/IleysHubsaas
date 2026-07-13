@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, useNavigate, useLocation, Link, NavLink } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import { useAlert } from '../context/AlertContext';
@@ -18,7 +18,6 @@ import StudentDetail from './StudentDetail';
 import TeacherDetail from './TeacherDetail';
 import SubjectDetail from './SubjectDetail';
 import LanguageSwitcher from './LanguageSwitcher';
-
 import { useTranslation } from 'react-i18next';
 
 export default function SchoolAdmin() {
@@ -26,7 +25,7 @@ export default function SchoolAdmin() {
   const { showAlert, showConfirm } = useAlert();
   const WEEK_DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
   const { 
-    currentUser, currentOrg, students, teachers, subjects, rooms, classSessions,
+    currentUser, currentOrg, loading, students, teachers, subjects, rooms, classSessions,
     attendanceRecords, feeRecords, salaryRecords, exams, examResults, users,
     addStudent, updateStudent, deleteStudent, bulkImportStudents,
     addTeacher, updateTeacher, deleteTeacher,
@@ -50,6 +49,9 @@ export default function SchoolAdmin() {
   
   const hasPermission = (permissionKey: string) => {
     if (currentUser?.role === 'schooladmin' || currentUser?.role === 'quranadmin' || currentUser?.role === 'superadmin') return true;
+    if (currentUser?.role === 'teacher') {
+      return permissionKey === 'Dashboard' || permissionKey === 'Exams';
+    }
     if (isStaff) {
       return currentUser?.permissions?.includes(permissionKey) || false;
     }
@@ -75,7 +77,7 @@ export default function SchoolAdmin() {
   // Redirect teachers to dashboard if on unauthorized tabs
   useEffect(() => {
     if (currentUser?.role === 'teacher') {
-      const allowedTabs = ['dashboard'];
+      const allowedTabs = ['dashboard', 'exams'];
       if (!allowedTabs.includes(activeTab)) {
         navigate('/portal/dashboard', { replace: true });
       }
@@ -158,7 +160,7 @@ export default function SchoolAdmin() {
 
   // Forms Fields State
   const [studentForm, setStudentForm] = useState({
-    fullName: '', studentPhone: '', parentPhone: '', address: '', gender: 'male' as 'male' | 'female', dob: '', fee: 50, subjects: [] as string[], classSessions: [] as string[]
+    fullName: '', studentPhone: '', parentPhone: '', address: '', gender: 'male' as 'male' | 'female', dob: '', fee: 50, subjects: [] as string[], classSessions: [] as string[], roomId: ''
   });
   const [teacherForm, setTeacherForm] = useState({
     fullName: '', email: '', phone: '', salary: 400, subjects: [] as string[], rooms: [] as string[], password: '', address: ''
@@ -249,12 +251,18 @@ export default function SchoolAdmin() {
   const [attSessionId, setAttSessionId] = useState('');
   const [attDate, setAttDate] = useState(new Date().toISOString().split('T')[0]);
   const [attRecords, setAttRecords] = useState<{ [studentId: string]: 'present' | 'absent' | 'late' }>({});
+  const [attSaved, setAttSaved] = useState(false);
   const [teacherActiveSession, setTeacherActiveSession] = useState<any | null>(null);
-  const [attendanceSubTab, setAttendanceSubTab] = useState<'take' | 'absentee' | 'records'>('take');
+  const [attendanceSubTab, setAttendanceSubTab] = useState<'take' | 'absentee' | 'records' | 'history'>('take');
+  const [historyFilterMonth, setHistoryFilterMonth] = useState(new Date().toISOString().slice(0, 7)); // YYYY-MM
   const [streakFilter, setStreakFilter] = useState<'all' | 'weekly' | 'monthly'>('weekly');
 
   // Marks Entry states
   const [marksData, setMarksData] = useState<{ [studentId: string]: number }>({});
+  const [examTeacherSessionId, setExamTeacherSessionId] = useState<string | null>(null);
+  
+  // Excel File Reference
+  const marksFileInputRef = useRef<HTMLInputElement>(null);
 
   // Error Messages
   const [formError, setFormError] = useState<string | null>(null);
@@ -268,6 +276,39 @@ export default function SchoolAdmin() {
       return () => clearTimeout(timer);
     }
   }, [successMessage]);
+
+  const loadedAttRef = useRef<string>('');
+
+  // Load existing attendance record if revisiting
+  useEffect(() => {
+    if (activeTab === 'attendance' && (attSessionId || attSubjectId) && attDate) {
+      const existingAtt = attendanceRecords.filter(a => a.organizationId === currentOrg?.id).find(a => 
+        a.date === attDate && 
+        (attSessionId ? a.sessionId === attSessionId : a.subjectId === attSubjectId)
+      );
+
+      // Use the actual document ID if it exists, otherwise use a placeholder.
+      // This solves the race condition: if attendance loads late from Firebase, 
+      // the key changes from placeholder to the real ID, triggering a UI update.
+      const key = existingAtt ? existingAtt.id : `${attSessionId || attSubjectId}-${attDate}`;
+      
+      // Only overwrite if it's a new class/date selection, or if a saved record just loaded
+      if (loadedAttRef.current !== key) {
+        if (existingAtt) {
+          const prefilledRecords: { [studentId: string]: 'present' | 'absent' | 'late' } = {};
+          existingAtt.records.forEach(r => {
+            prefilledRecords[r.studentId] = r.status;
+          });
+          setAttRecords(prefilledRecords);
+          setAttSaved(true); // Already has a saved record — show "saved" state
+        } else {
+          setAttRecords({});
+          setAttSaved(false); // Fresh class — start clean
+        }
+        loadedAttRef.current = key;
+      }
+    }
+  }, [attSessionId, attSubjectId, attDate, activeTab, attendanceRecords, currentOrg?.id]);
 
   const orgId = currentOrg?.id || '';
 
@@ -284,20 +325,37 @@ export default function SchoolAdmin() {
 
   // Teacher specific security boundaries
   const isTeacher = currentUser?.role === 'teacher';
-  const matchingTeacher = allOrgTeachers.find(t => t.id === currentUser?.teacherId || t.id === currentUser?.uid || (currentUser?.email && t.email?.toLowerCase() === currentUser?.email?.toLowerCase()));
-  const teacherClassSessions = allOrgClassSessions.filter(cs => cs.teacherId === matchingTeacher?.id);
+  const matchingTeacher = allOrgTeachers.find(t => 
+    t.id === currentUser?.teacherId || 
+    t.id === currentUser?.uid || 
+    (currentUser?.email && t.email?.toLowerCase() === currentUser?.email?.toLowerCase()) ||
+    (currentUser?.teacherId && t.id === currentUser?.teacherId)
+  );
+  
+  // Teacher class sessions - if teacher found, filter by teacherId; if not found, show all org sessions
+  const teacherClassSessions = matchingTeacher
+    ? allOrgClassSessions.filter(cs => 
+        cs.teacherId === matchingTeacher.id ||
+        cs.teacherId === currentUser?.teacherId
+      )
+    : isTeacher 
+      ? allOrgClassSessions // Fallback: show all org sessions so teacher can still work
+      : [];
   const orgClassSessions = isTeacher ? teacherClassSessions : allOrgClassSessions;
   const teacherSubjects = allOrgSubjects.filter(sub => 
     sub.teacherId === matchingTeacher?.id || 
+    sub.teacherId === currentUser?.teacherId ||
     (matchingTeacher?.subjects && matchingTeacher.subjects.includes(sub.id))
   );
   const teacherSubjectIds = teacherSubjects.map(s => s.id);
   
   // Boundary scoped lists
   const orgStudents = isTeacher 
-    ? allOrgStudents.filter(std => 
-        std.classSessions && std.classSessions.some(csId => teacherClassSessions.map(cs => cs.id).includes(csId))
-      )
+    ? allOrgStudents.filter(std => {
+        if (!std.classSessions || std.classSessions.length === 0) return false;
+        const teacherCsIds = teacherClassSessions.map(cs => cs.id);
+        return std.classSessions.some(csId => teacherCsIds.includes(csId));
+      })
     : allOrgStudents;
   const orgTeachers = allOrgTeachers; // Teachers list still accessible for lookups
   const orgSubjects = isTeacher ? teacherSubjects : allOrgSubjects;
@@ -345,7 +403,7 @@ export default function SchoolAdmin() {
     return true;
   });
   const orgExams = isTeacher 
-    ? allOrgExams.filter(ex => ex.subjectId && teacherSubjectIds.includes(ex.subjectId))
+    ? allOrgExams.filter(ex => ex.type === 'school' || (ex.subjectId && teacherSubjectIds.includes(ex.subjectId)))
     : allOrgExams;
   const isFeeExpired = (fee: FeeRecord) => {
     return false;
@@ -378,7 +436,7 @@ export default function SchoolAdmin() {
       .filter(fees => fees.some(f => f.month !== currentMonthStr));
   }, [studentDebts, currentMonthStr]);
 
-  const orgSalaries = isTeacher ? allOrgSalaries.filter(sal => sal.teacherId === matchingTeacher?.id) : allOrgSalaries; // Teachers only see their own salary status
+  const orgSalaries = isTeacher ? allOrgSalaries.filter(sal => sal.teacherId === matchingTeacher?.id) : allOrgSalaries.filter(sal => orgTeachers.some(t => t.id === sal.teacherId)); // Teachers only see their own salary status, admins see all active teachers
   const orgAttendance = isTeacher
     ? allOrgAttendance.filter(a => teacherSubjectIds.includes(a.subjectId))
     : allOrgAttendance;
@@ -432,22 +490,16 @@ export default function SchoolAdmin() {
     }
   };
 
-  const handleSettingsPasswordSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (settingsNewPassword !== settingsConfirmPassword) {
-      setSettingsPasswordError('Ereyada sirta ah ee aad gelisay isku mid ma aha! (Passwords do not match!)');
-      return;
-    }
+  const handleSettingsPasswordReset = async () => {
     setSettingsPasswordLoading(true);
     setSettingsPasswordError(null);
     setSettingsPasswordSuccess(null);
     try {
-      await changePassword(settingsNewPassword);
-      setSettingsPasswordSuccess('Password-kaaga si guul leh ayaa loo bedelay! (Password updated successfully!)');
-      setSettingsNewPassword('');
-      setSettingsConfirmPassword('');
+      if (!currentUser?.email) throw new Error('Cilad ayaa dhacday, fadlan dib u gal system-ka.');
+      await sendPasswordReset(currentUser.email);
+      setSettingsPasswordSuccess('Code-ka iyo Link-ga lagu bedelo password-ka waxaan u dirnay email-kaaga (' + currentUser.email + '). Fadlan hubi Inbox-ka ama Spam-ka!');
     } catch (err: any) {
-      setSettingsPasswordError(err.message || 'Ku guuldareystay bedelaada password-ka.');
+      setSettingsPasswordError(err.message || 'Ku guuldareystay diritaanka email-ka bedelaada password-ka.');
     } finally {
       setSettingsPasswordLoading(false);
     }
@@ -555,66 +607,59 @@ export default function SchoolAdmin() {
     e.preventDefault();
     setFormError(null);
 
-    // Check overlap server side
-    if (studentForm.classSessions && studentForm.classSessions.length > 0) {
-      const selectedSessions = allOrgClassSessions.filter(cs => studentForm.classSessions?.includes(cs.id));
+    let derivedSubjects: string[] = [];
+    
+    if (isQuranSchool) {
+      if (!studentForm.roomId) {
+        setFormError('Fadlan dooro qolka (Select a room)');
+        return;
+      }
+    } else {
+      if (!studentForm.classSessions || studentForm.classSessions.length === 0) {
+        setFormError('Fadlan dooro ugu yaraan hal Class Session oo uu ardaygu dhiganayo.');
+        return;
+      }
+
+      // Validate overlapping schedule for the selected class sessions of this student
+      const selectedSessions = allOrgClassSessions.filter(cs => studentForm.classSessions.includes(cs.id));
       for (let i = 0; i < selectedSessions.length; i++) {
         for (let j = i + 1; j < selectedSessions.length; j++) {
           const cs1 = selectedSessions[i];
           const cs2 = selectedSessions[j];
-          if (cs1.days.some(d => cs2.days.includes(d)) && (cs1.startTime < cs2.endTime && cs2.startTime < cs1.endTime)) {
-            showAlert(`Cilad Isku-dhac: Kuma dari kartid ardayga fasalada "${cs1.classCode}" iyo "${cs2.classCode}" waayo isku waqti bay dhacayaan.`, 'error');
+          
+          // Overlap: same day and overlapping hours
+          const daysOverlap = cs1.days.some(d => cs2.days.includes(d));
+          const timeOverlap = cs1.startTime < cs2.endTime && cs2.startTime < cs1.endTime;
+
+          if (daysOverlap && timeOverlap) {
+            setFormError(`Isku-dhac: Ma dooran kartid labo fasal oo isku waqti ah. "${cs1.classCode}" (${cs1.startTime} - ${cs1.endTime}) iyo "${cs2.classCode}" (${cs2.startTime} - ${cs2.endTime}) way isku dhacayaan.`);
             return;
           }
         }
       }
+      derivedSubjects = Array.from(new Set(selectedSessions.map(cs => cs.subjectId).filter(Boolean)));
     }
-
-
-    if (!studentForm.classSessions || studentForm.classSessions.length === 0) {
-      setFormError('Fadlan dooro ugu yaraan hal Class Session oo uu ardaygu dhiganayo.');
-      return;
-    }
-
-    // Validate overlapping schedule for the selected class sessions of this student
-    const selectedSessions = allOrgClassSessions.filter(cs => studentForm.classSessions.includes(cs.id));
-    for (let i = 0; i < selectedSessions.length; i++) {
-      for (let j = i + 1; j < selectedSessions.length; j++) {
-        const cs1 = selectedSessions[i];
-        const cs2 = selectedSessions[j];
-        
-        // Overlap: same day and overlapping hours
-        const daysOverlap = cs1.days.some(d => cs2.days.includes(d));
-        const timeOverlap = cs1.startTime < cs2.endTime && cs2.startTime < cs1.endTime;
-
-        if (daysOverlap && timeOverlap) {
-          setFormError(`Isku-dhac: Ma dooran kartid labo fasal oo isku waqti ah. "${cs1.classCode}" (${cs1.startTime} - ${cs1.endTime}) iyo "${cs2.classCode}" (${cs2.startTime} - ${cs2.endTime}) way isku dhacayaan.`);
-          return;
-        }
-      }
-    }
-
-    const derivedSubjects = Array.from(new Set(selectedSessions.map(cs => cs.subjectId).filter(Boolean)));
 
     if (selectedStudent) {
       updateStudent(selectedStudent.id, {
         ...studentForm,
         subjects: derivedSubjects,
       });
-      setSuccessMessage('Macluumaadka ardayga waa la bedelay si guul leh.');
+      showAlert('Ardayga xogihiisa waa la cusbooneysiiyay (Student updated).', 'success');
       setSelectedStudent(null);
     } else {
       addStudent({
         ...studentForm,
         subjects: derivedSubjects,
-        organizationId: orgId
+        organizationId: orgId,
+        profilePhoto: `https://api.dicebear.com/7.x/avataaars/svg?seed=${studentForm.fullName.replace(/\s+/g, '')}`
       });
-      setSuccessMessage('Student registered successfully.');
+      showAlert('Arday cusub ayaa la diiwaangeliyay (Student added).', 'success');
     }
     setActiveModal(null);
   };
 
-  const handleAddTeacherSubmit = (e: React.FormEvent) => {
+  const handleAddTeacherSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError(null);
 
@@ -841,8 +886,96 @@ export default function SchoolAdmin() {
     }
   };
 
+  const handleExcelMarksUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !selectedExam) return;
+    const examId = selectedExam.id;
+
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const bstr = evt.target?.result;
+        const wb = XLSX.read(bstr, { type: 'binary' });
+        const wsname = wb.SheetNames[0];
+        const ws = wb.Sheets[wsname];
+        const data = XLSX.utils.sheet_to_json(ws) as any[];
+        
+        const newMarksData: { [studentId: string]: number } = {};
+        let validMarksCount = 0;
+
+        data.forEach(row => {
+          // Flexible matching for Student ID/Name and Marks
+          const sid = row['Student ID'] || row['ID'] || row['StudentId'] || row['studentId'];
+          const marksRaw = row['Marks'] || row['Score'] || row['Mark'] || row['Grade'];
+          
+          if (sid && marksRaw !== undefined) {
+            const marks = Number(marksRaw) || 0;
+            const student = allOrgStudents.find(s => s.id === String(sid).trim() || s.studentId === String(sid).trim());
+            
+            if (student) {
+              newMarksData[student.id] = marks;
+              validMarksCount++;
+            }
+          }
+        });
+
+        if (validMarksCount > 0) {
+          const defaults: any = {};
+          let targetStudents = allOrgStudents;
+          
+          if (examTeacherSessionId) {
+            targetStudents = allOrgStudents.filter(s => s.classSessions?.includes(examTeacherSessionId));
+          } else if (selectedExam.type !== 'school') {
+            targetStudents = allOrgStudents.filter(s => 
+              (selectedExam.sessionId && s.classSessions?.includes(selectedExam.sessionId)) || 
+              (selectedExam.subjectId && s.subjects?.includes(selectedExam.subjectId))
+            );
+          }
+
+          targetStudents.forEach(s => {
+            defaults[s.id] = newMarksData[s.id] !== undefined ? newMarksData[s.id] : 0;
+          });
+
+          setMarksData(defaults);
+          setActiveModal('enterMarks');
+          setSuccessMessage(`Si guul leh ayaa loo soo akhriyey ${validMarksCount} dhibcood. Fadlan hubi oo taabo 'Submit Scores'.`);
+        } else {
+          setFormError('No valid marks found in the Excel file. Please check column headers (Student ID, Marks).');
+        }
+      } catch (err) {
+        console.error('Error importing marks:', err);
+        setFormError('Failed to parse Excel file. Please ensure it is a valid format.');
+      }
+      
+      // Reset input
+      if (marksFileInputRef.current) {
+        marksFileInputRef.current.value = '';
+      }
+    };
+    reader.readAsBinaryString(file);
+  };
+
+  const handleDownloadTemplate = (ex: any, specificSessionId?: string) => {
+    const headers = [['Student ID', 'Student Name', 'Marks']];
+    let targetStudents = allOrgStudents;
+    if (specificSessionId) {
+      targetStudents = allOrgStudents.filter(s => s.classSessions?.includes(specificSessionId));
+    } else if (ex.type !== 'school') {
+      targetStudents = allOrgStudents.filter(s => 
+        (ex.sessionId && s.classSessions?.includes(ex.sessionId)) || 
+        (ex.subjectId && s.subjects?.includes(ex.subjectId))
+      );
+    }
+    const rows = targetStudents.map(s => [s.studentId || s.id, s.fullName, '']);
+    const ws = XLSX.utils.aoa_to_sheet([...headers, ...rows]);
+    ws['!cols'] = [{ wch: 15 }, { wch: 25 }, { wch: 10 }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Marks Template');
+    XLSX.writeFile(wb, `${ex.title.replace(/\s+/g, '_')}_Template.xlsx`);
+  };
+
   const downloadExcelTemplate = () => {
-    const headers = [['Full Name', 'Student Phone', 'Parent Phone', 'Address', 'Gender', 'Date of Birth (YYYY-MM-DD)', 'Monthly Fee']];
+    const headers = [[t('settings.fullName'), 'Student Phone', 'Parent Phone', 'Address', 'Gender', 'Date of Birth (YYYY-MM-DD)', 'Monthly Fee']];
     const exampleRow = [
       ['Zakaria Farah', '+252615111111', '+252615999991', 'Wadajir', 'male', '2012-05-15', '50'],
       ['Amina Mohamed', '+252615222222', '+252615999992', 'Hodan', 'female', '2013-08-20', '45']
@@ -1588,8 +1721,10 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
       }
     } catch(e) {}
 
+    const studentObj = allOrgStudents.find(s => s.id === fee.studentId || s.fullName === fee.studentName);
     const rows: { label: string; value: string }[] = [
       { label: 'ARDAYGA / STUDENT', value: fee.studentName },
+      { label: 'STUDENT ID / AQOONSIGA', value: studentObj?.studentId || fee.studentId || 'N/A' },
       { label: 'INVOICE NO / RISIIDH', value: fee.invoiceNumber },
       { label: 'BISHA / MONTH', value: fee.month },
       { label: 'TAARIIKHDA / DATE', value: paymentDateStr },
@@ -2558,7 +2693,10 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                   {orgClassSessions.map((cs, idx) => {
                     const sub = allOrgSubjects.find(s => s.id === cs.subjectId);
                     const roomObj = allOrgRooms.find(r => r.id === cs.roomId);
-                    const roomName = roomObj ? `Room ${roomObj.roomNumber}` : 'Room A';
+                    const roomName = roomObj ? `Room ${roomObj.roomNumber}` : (cs.roomId || 'Room A');
+                    const classStudentCount = allOrgStudents.filter(std =>
+                      std.classSessions?.includes(cs.id) || std.subjects?.includes(cs.subjectId)
+                    ).length;
                     return (
                       <div key={cs.id} className="py-5 first:pt-0 last:pb-0 flex flex-col justify-between items-start gap-4">
                         <div className="space-y-1">
@@ -2566,10 +2704,10 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                             {cs.startTime} - {cs.endTime}
                           </p>
                           <h4 className="text-base font-bold text-slate-900">
-                            {sub?.name || 'Class Subject'}
+                            {sub?.name || cs.subjectId || 'Class Subject'}
                           </h4>
                           <p className="text-xs text-slate-500 font-medium">
-                            {roomName}
+                            {roomName} &bull; {classStudentCount} ardayda
                           </p>
                         </div>
                         <button
@@ -2600,8 +2738,8 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
           const cs = teacherActiveSession;
           const sub = allOrgSubjects.find(s => s.id === cs.subjectId);
           const roomObj = allOrgRooms.find(r => r.id === cs.roomId);
-          const roomName = roomObj ? `Room ${roomObj.roomNumber}` : 'Room A';
-          const enrolledStudents = orgStudents.filter(std => 
+          const roomName = roomObj ? `Room ${roomObj.roomNumber}` : (cs.roomId || 'Room A');
+          const enrolledStudents = allOrgStudents.filter(std => 
             std.classSessions?.includes(cs.id) || 
             std.subjects?.includes(cs.subjectId)
           );
@@ -2677,10 +2815,10 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                       }));
                       saveAttendance({
                         date: attDate,
-                        roomId: cs.roomId || 'rm-1',
-                        subjectId: cs.subjectId,
+                        roomId: cs.roomId || 'rm-unknown',
+                        subjectId: cs.subjectId || 'general',
                         sessionId: cs.id,
-                        teacherId: matchingTeacher?.id || 't-101',
+                        teacherId: matchingTeacher?.id || currentUser?.teacherId || 'teacher',
                         records: recordsArray,
                         organizationId: orgId
                       });
@@ -2700,6 +2838,197 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
     );
   };
 
+  const renderTeacherExamFlow = () => {
+    return (
+      <div className="space-y-6">
+        <div className="bg-white p-6 rounded-2xl border border-gray-100 card-shadow">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+              <h2 className="text-2xl font-bold tracking-tight text-slate-900">Submit Exam Marks</h2>
+              <p className="text-sm text-slate-500 mt-1">Select a class and exam to enter grades</p>
+            </div>
+            {examTeacherSessionId && (
+              <button 
+                onClick={() => setExamTeacherSessionId(null)}
+                className="px-4 py-2 bg-slate-50 hover:bg-slate-100 text-slate-700 rounded-xl text-sm font-semibold transition-colors border border-slate-200 w-fit"
+              >
+                ← Back to Classes
+              </button>
+            )}
+          </div>
+        </div>
+
+        {!examTeacherSessionId ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {orgClassSessions.length === 0 ? (
+              <div className="col-span-full text-center py-12 bg-white rounded-2xl border border-dashed border-slate-200">
+                <p className="text-slate-400 font-medium">Ma jiraan fasallo laguu xilsaaray (No classes assigned to you).</p>
+              </div>
+            ) : (
+              orgClassSessions.map((cs) => {
+                const sub = allOrgSubjects.find(s => s.id === cs.subjectId);
+                const roomObj = allOrgRooms.find(r => r.id === cs.roomId);
+                const roomName = roomObj ? `Room ${roomObj.roomNumber}` : (cs.roomId || 'Room A');
+                const studentCount = allOrgStudents.filter(s => s.classSessions?.includes(cs.id)).length;
+
+                return (
+                  <div 
+                    key={cs.id} 
+                    onClick={() => setExamTeacherSessionId(cs.id)}
+                    className="bg-white p-6 rounded-2xl border border-gray-100 card-shadow hover:border-indigo-500 hover:ring-2 hover:ring-indigo-100 transition-all cursor-pointer group"
+                  >
+                    <div className="flex items-center justify-between mb-4">
+                      <span className="px-3 py-1 bg-indigo-50 text-indigo-700 rounded-full text-xs font-bold font-mono border border-indigo-100">
+                        {cs.startTime} - {cs.endTime}
+                      </span>
+                      <span className="flex items-center gap-1.5 text-xs font-semibold text-slate-500 bg-slate-50 px-2 py-1 rounded-lg">
+                        <Users size={14} /> {studentCount}
+                      </span>
+                    </div>
+                    <h4 className="text-lg font-bold text-slate-900 mb-1 group-hover:text-indigo-600 transition-colors">{sub?.name || cs.subjectId}</h4>
+                    <p className="text-sm text-slate-500 font-medium flex items-center gap-1.5">
+                      <BookOpen size={14} /> {roomName}
+                    </p>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        ) : (
+          <div className="space-y-6">
+            {(() => {
+              const cs = orgClassSessions.find(c => c.id === examTeacherSessionId);
+              if (!cs) return null;
+              
+              const classExams = orgExams.filter(e => e.sessionId === cs.id || e.type === 'school');
+
+              return (
+                <div className="bg-white p-6 rounded-2xl border border-gray-100 card-shadow">
+                  <h3 className="text-lg font-bold text-slate-900 mb-6 border-b border-slate-100 pb-4">Available Exams for this Class</h3>
+                  
+                  {classExams.length === 0 ? (
+                    <div className="text-center py-12 text-slate-400 font-medium bg-slate-50 rounded-xl">
+                      Ma jiraan imtixaano loo qorsheeyay fasalkan.
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {classExams.map(ex => (
+                        <div key={ex.id} className="p-5 rounded-xl border border-slate-100 bg-slate-50 hover:bg-slate-100/50 transition-colors">
+                          <div className="flex justify-between items-start mb-4">
+                            <div>
+                              <h4 className="font-bold text-slate-900 text-base">{ex.title}</h4>
+                              <span className={`inline-block mt-1.5 px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider ${
+                                ex.type === 'school' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'
+                              }`}>
+                                {ex.type === 'school' ? 'School Exam' : 'Subject Exam'}
+                              </span>
+                            </div>
+                            {ex.published && (
+                              <span className="flex items-center gap-1 text-[10px] font-bold px-2 py-1 bg-green-100 text-green-700 rounded-md">
+                                <Check size={12} /> Published
+                              </span>
+                            )}
+                          </div>
+                          
+                          <div className="flex flex-col gap-2">
+                            <button
+                              onClick={() => {
+                                setSelectedExam(ex);
+                                const defaults: any = {};
+                                const classStudents = allOrgStudents.filter(s => s.classSessions?.includes(cs.id));
+                                classStudents.forEach(s => {
+                                  defaults[s.id] = 0; 
+                                });
+                                setMarksData(defaults);
+                                setActiveModal('enterMarks');
+                              }}
+                              className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 rounded-xl text-sm transition-colors shadow-sm flex justify-center items-center gap-2"
+                            >
+                              <Edit2 size={16} /> Enter Marks
+                            </button>
+                            
+                            <div className="grid grid-cols-2 gap-2">
+                              <button
+                                onClick={() => {
+                                  setSelectedExam(ex);
+                                  if (marksFileInputRef.current) marksFileInputRef.current.click();
+                                }}
+                                className="bg-white hover:bg-emerald-50 text-emerald-700 font-bold py-2 rounded-xl text-xs transition-colors border border-emerald-200 flex justify-center items-center gap-1.5 shadow-sm"
+                              >
+                                <Upload size={14} /> Upload Excel
+                              </button>
+                              <button
+                                onClick={() => handleDownloadTemplate(ex, cs.id)}
+                                className="bg-white hover:bg-slate-100 text-slate-700 font-bold py-2 rounded-xl text-xs transition-colors border border-slate-200 flex justify-center items-center gap-1.5 shadow-sm"
+                              >
+                                <Download size={14} /> Template
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  // --- Main Render ---
+  if (loading) {
+    return (
+      <div className="flex flex-col min-h-screen bg-[#fcfcfd] pb-20 md:pb-8">
+        <header className="bg-white border-b border-gray-100 p-4 sticky top-0 z-30 card-shadow text-slate-900">
+          <div className="max-w-7xl mx-auto flex items-center justify-between gap-3">
+            <div className="animate-pulse flex items-center gap-3">
+              <div className="w-9 h-9 bg-slate-200 rounded-xl"></div>
+              <div>
+                <div className="h-4 bg-slate-200 rounded w-32 mb-1"></div>
+                <div className="h-2.5 bg-slate-100 rounded w-24"></div>
+              </div>
+            </div>
+            <div className="animate-pulse flex gap-2">
+              <div className="h-8 bg-slate-100 rounded-lg w-20"></div>
+              <div className="h-8 bg-slate-200 rounded-lg w-20"></div>
+            </div>
+          </div>
+        </header>
+        <div className="max-w-7xl mx-auto w-full px-4 mt-6 flex-1 grid grid-cols-1 lg:grid-cols-12 gap-6">
+          <aside className="hidden lg:block lg:col-span-3 bg-white p-4 rounded-2xl border border-gray-100 card-shadow h-[600px]">
+            <div className="animate-pulse space-y-3">
+              <div className="h-2.5 bg-slate-200 rounded w-1/2 mb-5"></div>
+              {[...Array(9)].map((_, i) => (
+                <div key={i} className="h-10 bg-slate-100 rounded-xl w-full"></div>
+              ))}
+            </div>
+          </aside>
+          <main className="lg:col-span-9 bg-white rounded-2xl border border-gray-100 card-shadow p-6 min-h-[600px]">
+            <div className="animate-pulse space-y-6">
+              <div className="flex justify-between items-center">
+                <div className="h-8 bg-slate-200 rounded w-1/4"></div>
+                <div className="h-10 bg-slate-200 rounded-xl w-32"></div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {[...Array(3)].map((_, i) => (
+                  <div key={i} className="h-24 bg-slate-100 rounded-2xl"></div>
+                ))}
+              </div>
+              <div className="space-y-3">
+                {[...Array(6)].map((_, i) => (
+                  <div key={i} className="h-16 bg-slate-100 rounded-xl w-full"></div>
+                ))}
+              </div>
+            </div>
+          </main>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col min-h-screen bg-[#fcfcfd] pb-20 md:pb-8">
       {/* Upper Navigation Header */}
@@ -2707,12 +3036,7 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
         <div className="max-w-7xl mx-auto flex items-center justify-between gap-3">
           <div className="flex items-center gap-3 min-w-0">
             {currentOrg?.logoUrl ? (
-              <img 
-                src={currentOrg.logoUrl} 
-                alt={currentOrg.name} 
-                referrerPolicy="no-referrer"
-                className="w-9 h-9 object-cover rounded-xl border border-slate-100 shadow-xs shrink-0"
-              />
+              <img src={currentOrg.logoUrl} alt={currentOrg.name} referrerPolicy="no-referrer" className="w-9 h-9 object-cover rounded-xl border border-slate-100 shadow-xs shrink-0" />
             ) : (
               <div className="w-9 h-9 bg-black text-white rounded-xl flex items-center justify-center shrink-0">
                 <School size={18} />
@@ -2725,50 +3049,22 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
               </p>
             </div>
           </div>
-
           <div className="flex items-center gap-2 shrink-0">
             <LanguageSwitcher />
-            
-            {isQuranSchool && (
-              <button 
-                onClick={() => setQuranModeWithoutTeachers(!quranModeWithoutTeachers)}
-                className="hidden md:block bg-slate-50 hover:bg-slate-100 text-[10px] uppercase font-bold text-slate-800 px-3 py-1.5 rounded-lg border border-slate-200 cursor-pointer transition-colors"
-              >
-                Toggle Teachers Mode
-              </button>
-            )}
             {currentUser?.role === 'superadmin' && (
-              <button 
-                onClick={() => {
-                  selectActiveOrg(null);
-                  navigate('/superadmin');
-                }}
-                className="hidden md:flex items-center gap-1.5 text-xs text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-200 px-3 py-1.5 rounded-lg transition-colors cursor-pointer font-bold shrink-0"
-              >
+              <button onClick={() => { selectActiveOrg(null); navigate('/superadmin'); }} className="hidden md:flex items-center gap-1.5 text-xs text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-200 px-3 py-1.5 rounded-lg transition-colors cursor-pointer font-bold shrink-0">
                 ← Super Admin
               </button>
             )}
-            {/* Desktop only: Settings & Log Out */}
             {!isTeacher && (
-              <button 
-                onClick={() => navigate('/portal/settings')}
-                className="hidden md:flex items-center gap-1.5 text-xs text-slate-700 bg-slate-50 hover:bg-slate-100 border border-slate-200 px-3 py-1.5 rounded-lg transition-colors cursor-pointer"
-              >
+              <button onClick={() => navigate('/portal/settings')} className="hidden md:flex items-center gap-1.5 text-xs text-slate-700 bg-slate-50 hover:bg-slate-100 border border-slate-200 px-3 py-1.5 rounded-lg transition-colors cursor-pointer">
                 <Settings size={14} /> Settings
               </button>
             )}
-            <button 
-              onClick={logout}
-              className="hidden md:block bg-black hover:bg-slate-800 text-xs text-white font-semibold px-3 py-1.5 rounded-lg border border-transparent cursor-pointer transition-colors shadow-sm"
-            >
+            <button onClick={logout} className="hidden md:block bg-black hover:bg-slate-800 text-xs text-white font-semibold px-3 py-1.5 rounded-lg border border-transparent cursor-pointer transition-colors shadow-sm">
               Log Out
             </button>
-
-            {/* Mobile only: Hamburger Menu Button */}
-            <button
-              onClick={() => setIsMobileMenuOpen(true)}
-              className="lg:hidden flex items-center gap-1.5 bg-slate-900 text-white text-xs font-bold px-3 py-2 rounded-xl cursor-pointer transition-colors"
-            >
+            <button onClick={() => setIsMobileMenuOpen(true)} className="lg:hidden flex items-center gap-1.5 bg-slate-900 text-white text-xs font-bold px-3 py-2 rounded-xl cursor-pointer transition-colors">
               <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
               </svg>
@@ -2783,7 +3079,7 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
         {/* Left Sidebar (Desktop Only) */}
         <aside className="hidden lg:block lg:col-span-3 bg-white p-4 rounded-2xl border border-gray-100 card-shadow h-fit space-y-2">
           <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-3 mb-2">
-            {isTeacher ? 'Teacher Portal' : 'Management Modules'}
+            {isTeacher ? t('header.schoolAdmin') : 'Management Modules'}
           </p>
           {hasPermission('Dashboard') && (
             <NavLink 
@@ -2794,8 +3090,6 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
               <LayoutDashboard size={18} /> {t('sidebar.dashboard')}
             </NavLink>
           )}
-          {!isTeacher && (
-            <>
               {hasPermission('Students') && (
                 <NavLink 
                   to="/portal/students"
@@ -2816,20 +3110,24 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
               )}
               {hasPermission('School Settings') && (
                 <>
-                  <NavLink 
-                    to="/portal/subjects"
-                    onClick={() => setIsMobileMenuOpen(false)}
-                    className={({ isActive }) => `w-full flex items-center gap-2.5 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all cursor-pointer ${isActive || location.pathname.includes('/portal/subjects/') ? 'active-nav' : 'text-slate-600 hover:bg-slate-50 sidebar-item'}`}
-                  >
-                    <BookOpen size={18} /> {t('sidebar.subjects')} ({totalSubjects})
-                  </NavLink>
-                  <NavLink 
-                    to="/portal/class-sessions"
-                    onClick={() => setIsMobileMenuOpen(false)}
-                    className={({ isActive }) => `w-full flex items-center gap-2.5 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all cursor-pointer ${isActive || location.pathname.includes('/portal/class-sessions/') ? 'active-nav' : 'text-slate-600 hover:bg-slate-50 sidebar-item'}`}
-                  >
-                    <Clock size={18} /> {t('sidebar.classes')} ({orgClassSessions.length})
-                  </NavLink>
+                  {!isQuranSchool && (
+                    <>
+                      <NavLink 
+                        to="/portal/subjects"
+                        onClick={() => setIsMobileMenuOpen(false)}
+                        className={({ isActive }) => `w-full flex items-center gap-2.5 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all cursor-pointer ${isActive || location.pathname.includes('/portal/subjects/') ? 'active-nav' : 'text-slate-600 hover:bg-slate-50 sidebar-item'}`}
+                      >
+                        <BookOpen size={18} /> {t('sidebar.subjects')} ({totalSubjects})
+                      </NavLink>
+                      <NavLink 
+                        to="/portal/class-sessions"
+                        onClick={() => setIsMobileMenuOpen(false)}
+                        className={({ isActive }) => `w-full flex items-center gap-2.5 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all cursor-pointer ${isActive || location.pathname.includes('/portal/class-sessions/') ? 'active-nav' : 'text-slate-600 hover:bg-slate-50 sidebar-item'}`}
+                      >
+                        <Clock size={18} /> {t('sidebar.classes')} ({orgClassSessions.length})
+                      </NavLink>
+                    </>
+                  )}
                   <NavLink 
                     to="/portal/rooms"
                     onClick={() => setIsMobileMenuOpen(false)}
@@ -2866,7 +3164,7 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                   <DollarSign size={18} /> {t('sidebar.salary')}
                 </NavLink>
               )}
-              {hasPermission('Exams') && (
+              {hasPermission('Exams') && !isQuranSchool && (
                 <NavLink 
                   to="/portal/exams"
                   onClick={() => setIsMobileMenuOpen(false)}
@@ -2903,8 +3201,6 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                   <Settings size={18} /> {t('sidebar.settings')}
                 </NavLink>
               )}
-            </>
-          )}
         </aside>
 
         {/* Center Panel Content */}
@@ -2942,13 +3238,13 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
 
                         <div className="bg-gradient-to-br from-emerald-500 to-emerald-600 p-5 rounded-2xl shadow-[0_8px_30px_-4px_rgba(16,185,129,0.4)] text-white border border-emerald-400">
                           <span className="text-white opacity-90"><DollarSign size={20} /></span>
-                          <p className="text-[10px] font-bold text-white/80 uppercase tracking-wider mt-2">Paid Fees</p>
+                          <p className="text-[10px] font-bold text-white/80 uppercase tracking-wider mt-2">{t('fees.paid')}</p>
                           <p className="text-3xl font-bold mt-1 text-white">${collectedFees}</p>
                         </div>
 
                         <div className="bg-gradient-to-br from-amber-500 to-amber-600 p-5 rounded-2xl shadow-[0_8px_30px_-4px_rgba(245,158,11,0.4)] text-white border border-amber-400">
                           <span className="text-white opacity-90"><DollarSign size={20} /></span>
-                          <p className="text-[10px] font-bold text-white/80 uppercase tracking-wider mt-2">Pending Fees</p>
+                          <p className="text-[10px] font-bold text-white/80 uppercase tracking-wider mt-2">{t('fees.pending')}</p>
                           <p className="text-3xl font-bold mt-1 text-white">${pendingFees}</p>
                         </div>
                       </div>
@@ -3013,18 +3309,33 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                             {todayAttendance.length === 0 ? (
                               <p className="text-xs text-slate-400 py-4">No attendance marked today.</p>
                             ) : (
-                              todayAttendance.slice(0, 3).map(att => {
+                              todayAttendance.slice(0, 5).map(att => {
                                 const sub = orgSubjects.find(s => s.id === att.subjectId);
                                 const present = att.records.filter(r => r.status === 'present').length;
                                 return (
-                                  <div key={att.id} className="py-2.5 flex items-center justify-between">
+                                  <div 
+                                    key={att.id} 
+                                    onClick={() => {
+                                      setActiveTab('attendance');
+                                      setAttendanceSubTab('take');
+                                      setAttDate(att.date);
+                                      setAttSubjectId(att.subjectId);
+                                      setAttSessionId(att.sessionId || '');
+                                    }}
+                                    className="py-2.5 px-2 -mx-2 flex items-center justify-between rounded-lg cursor-pointer hover:bg-slate-50 transition-colors"
+                                  >
                                     <div>
-                                      <p className="text-xs font-bold text-slate-800">{sub?.name || 'Quran Memorization'}</p>
+                                      <p className="text-xs font-bold text-slate-800">{sub?.name || 'Class Session'}</p>
                                       <p className="text-[10px] text-slate-400">{att.date}</p>
                                     </div>
-                                    <span className="text-xs font-semibold text-slate-600">
-                                      {present} / {att.records.length} Present
-                                    </span>
+                                    <div className="flex flex-col items-end">
+                                      <span className="text-xs font-semibold text-slate-600">
+                                        {present} / {att.records.length} Present
+                                      </span>
+                                      <span className="text-[9px] font-bold bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded mt-0.5 shadow-sm">
+                                        Xaadirin La Qaaday
+                                      </span>
+                                    </div>
                                   </div>
                                 );
                               })
@@ -3086,7 +3397,7 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                     onClick={() => setActiveModal('invoice')} // Show Bulk Import trigger
                     className="flex items-center gap-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs px-4 py-2 rounded-xl transition-colors cursor-pointer"
                   >
-                    <Upload size={16} /> Soo Geli Excel / CSV
+                    <Upload size={16} /> {t('common.upload')}
                   </button>
                 </div>
               </div>
@@ -3100,7 +3411,7 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                     type="text"
                     value={studentSearchQuery}
                     onChange={(e) => setStudentSearchQuery(e.target.value)}
-                    placeholder="Ku raadi Magaca ama ID..."
+                    placeholder={t('students.searchPlaceholder')}
                     className="w-full pl-9 pr-8 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-black font-medium transition-colors"
                   />
                   {studentSearchQuery && (
@@ -3120,7 +3431,7 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                     onChange={(e) => setStudentFilterRoomId(e.target.value)}
                     className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-black font-medium text-slate-700 transition-colors"
                   >
-                    <option value="">Dhamaan Qolalka (All Rooms)</option>
+                    <option value="">All Rooms</option>
                     {orgRooms.map(room => (
                       <option key={room.id} value={room.id}>
                         Qolka: {room.roomNumber} ({room.building})
@@ -3154,9 +3465,9 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                       <tr className="bg-[#fcfcfd] border-b border-gray-100 text-slate-500 font-semibold text-xs uppercase tracking-wider">
                         <th className="p-4">Student Name & ID</th>
                         <th className="p-4">Contact Info</th>
-                        <th className="p-4">Assigned Schedule & Room</th>
+                        <th className="p-4">{isQuranSchool ? 'Assigned Room' : 'Assigned Schedule & Room'}</th>
                         <th className="p-4">Monthly Fee</th>
-                        {!isTeacher && <th className="p-4 text-right">Actions</th>}
+                        {!isTeacher && <th className="p-4 text-right">{t('common.action')}</th>}
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
@@ -3194,10 +3505,31 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                             </td>
                             <td className="p-4">
                               <div className="flex flex-wrap gap-1 max-w-xs">
-                                {student.subjects.length === 0 ? (
-                                  <span className="text-slate-400 text-xs">No subjects assigned</span>
-                                ) : (
-                                  student.subjects.map(subId => {
+                                {(() => {
+                                  if (isQuranSchool) {
+                                    return (
+                                      <span className="text-slate-700 text-xs font-semibold">
+                                        {student.roomId ? (orgRooms.find(r => r.id === student.roomId)?.roomNumber || 'Unknown Room') : 'No Room Assigned'}
+                                      </span>
+                                    );
+                                  }
+                                  if (student.classSessions && student.classSessions.length > 0) {
+                                    return student.classSessions.map(csId => {
+                                      const cs = allOrgClassSessions.find(c => c.id === csId);
+                                      if (!cs) return null;
+                                      const sub = orgSubjects.find(s => s.id === cs.subjectId);
+                                      const rm = orgRooms.find(r => r.id === cs.roomId);
+                                      return (
+                                        <span key={csId} className="inline-flex items-center gap-1 bg-slate-100 text-slate-700 text-[10px] px-2 py-0.5 rounded-lg font-medium">
+                                          {sub?.name || cs.classCode} ({rm ? rm.roomNumber : 'No Room'} @ {cs.startTime}-{cs.endTime})
+                                        </span>
+                                      );
+                                    });
+                                  }
+                                  if (student.subjects.length === 0) {
+                                    return <span className="text-slate-400 text-xs">No subjects assigned</span>;
+                                  }
+                                  return student.subjects.map(subId => {
                                     const sub = orgSubjects.find(s => s.id === subId);
                                     const rm = sub ? orgRooms.find(r => r.id === sub.roomId) : null;
                                     if (!sub) return null;
@@ -3206,8 +3538,8 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                                         {sub.name} ({rm ? rm.roomNumber : 'No Room'} @ {sub.startTime}-{sub.endTime})
                                       </span>
                                     );
-                                  })
-                                )}
+                                  });
+                                })()}
                               </div>
                             </td>
                             <td className="p-4 font-bold text-slate-800">
@@ -3228,7 +3560,8 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                                        dob: student.dob || '',
                                        fee: student.fee,
                                        subjects: student.subjects,
-                                       classSessions: student.classSessions || []
+                                       classSessions: student.classSessions || [],
+                                       roomId: student.roomId || ''
                                      });
                                      setActiveModal('addStudent');
                                    }}
@@ -3284,7 +3617,7 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                         <th className="p-4">Email / Phone</th>
                         <th className="p-4">Password</th>
                         <th className="p-4">Monthly Salary</th>
-                        <th className="p-4 text-right">Actions</th>
+                        <th className="p-4 text-right">{t('common.action')}</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
@@ -3373,7 +3706,7 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                        <tr className="bg-[#fcfcfd] border-b border-gray-100 text-slate-500 font-semibold text-xs uppercase tracking-wider">
                          <th className="p-4">Magaca Maaddada</th>
                          <th className="p-4">Capacity</th>
-                         <th className="p-4 text-right">Actions</th>
+                         <th className="p-4 text-right">{t('common.action')}</th>
                        </tr>
                      </thead>
                      <tbody className="divide-y divide-slate-100">
@@ -3452,7 +3785,7 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
               <div className="flex items-center justify-between">
                 <div>
                   <h2 className="text-xl font-bold tracking-tight text-slate-900">Jadwalka Fasalada (Class Sessions Schedule)</h2>
-                  <p className="text-xs text-slate-500 mt-1">U samee fasalada koodhadh gaar ah (e.g. EL26), ku xir maaddo, macallin, iyo qol gaar ah.</p>
+                  <p className="text-xs text-slate-500 mt-1">Create class sessions with unique codes (e.g. EL26), ku xir maaddo, macallin, iyo qol gaar ah.</p>
                 </div>
                 {!isTeacher && (
                   <button 
@@ -3726,6 +4059,16 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                     >
                       RECORDS
                     </button>
+                    <button
+                      onClick={() => setAttendanceSubTab('history')}
+                      className={`px-4 py-1.5 rounded-xl text-xs font-bold uppercase tracking-wider transition-all cursor-pointer ${
+                        attendanceSubTab === 'history' 
+                          ? 'bg-white text-indigo-950 shadow-sm' 
+                          : 'text-slate-500 hover:text-slate-800'
+                      }`}
+                    >
+                      HISTORY
+                    </button>
                   </div>
                 )}
               </div>
@@ -3741,7 +4084,7 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                           <p className="text-xs text-slate-500 mt-0.5">Fadlan guji qolka/maadada aad rabto inaad hadda ka qaado xaadirinta.</p>
                         </div>
                         <div className="flex items-center justify-end gap-2 w-full sm:w-auto">
-                          <label className="text-xs font-bold text-slate-500 uppercase whitespace-nowrap">Taariikhda (Date):</label>
+                          <label className="text-xs font-bold text-slate-500 uppercase whitespace-nowrap">Date:</label>
                           <input 
                             type="date" 
                             value={attDate} 
@@ -3774,6 +4117,7 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                                   setAttSessionId(cs.id);
                                   setAttSubjectId(cs.subjectId);
                                   setAttRoomId(cs.roomId);
+                                  setAttSaved(false);
                                 }}
                                 className={`text-left p-5 rounded-2xl border transition-all duration-200 cursor-pointer flex flex-col justify-between h-full relative overflow-hidden group ${
                                   isSelected 
@@ -3809,7 +4153,7 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
 
                                   <div className="space-y-1.5 pt-1">
                                     <div className="flex items-center gap-2 text-xs">
-                                      <span className={isSelected ? 'text-indigo-200' : 'text-slate-400 font-medium'}>Qolka (Room):</span>
+                                      <span className={isSelected ? 'text-indigo-200' : 'text-slate-400 font-medium'}>Room:</span>
                                       <span className="font-bold">{roomObj?.roomNumber || 'N/A'}</span>
                                       {roomObj?.building && (
                                         <span className={`text-[10px] px-1.5 py-0.2 rounded ${isSelected ? 'bg-indigo-900 text-indigo-300' : 'bg-slate-100 text-slate-500'}`}>
@@ -3890,31 +4234,14 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                       </div>
 
                       <div>
-                        <label className="block text-xs font-semibold text-slate-400 uppercase mb-1">Select Subject</label>
-                        <select 
-                          value={attSubjectId} 
-                          onChange={(e) => {
-                            setAttSubjectId(e.target.value);
-                            setAttSessionId('');
-                          }}
-                          className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm"
-                        >
-                          <option value="">-- Choose Subject --</option>
-                          {orgSubjects.filter(s => !attRoomId || s.roomId === attRoomId).map(s => (
-                            <option key={s.id} value={s.id}>{s.name}</option>
-                          ))}
-                        </select>
-                      </div>
-
-                      <div>
                         <label className="block text-xs font-semibold text-slate-400 uppercase mb-1">Instructor</label>
                         <div className="p-2.5 bg-slate-100 text-slate-600 rounded-xl text-sm font-semibold truncate">
-                          {attSubjectId ? (orgTeachers.find(t => t.id === orgSubjects.find(s => s.id === attSubjectId)?.teacherId)?.fullName || 'Assigned Instructor') : 'Select Subject first'}
+                          {attSubjectId ? (orgTeachers.find(t => t.id === orgSubjects.find(s => s.id === attSubjectId)?.teacherId)?.fullName || 'Assigned Instructor') : 'Select Class Session first'}
                         </div>
                       </div>
 
                       <div>
-                        <label className="block text-xs font-semibold text-slate-400 uppercase mb-1">Date</label>
+                        <label className="block text-xs font-semibold text-slate-400 uppercase mb-1">{t('common.date')}</label>
                         <input 
                           type="date" 
                           value={attDate} 
@@ -3928,9 +4255,38 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                   {/* Students Attendance Status List */}
                   {attSubjectId && (
                     <div className="border border-gray-100 rounded-xl overflow-hidden mt-6">
-                      <div className="bg-[#fcfcfd] p-3 font-semibold text-xs uppercase text-slate-500 grid grid-cols-12">
-                        <div className="col-span-6">Student Name</div>
-                        <div className="col-span-6 text-right">Attendance Status</div>
+                      <div className="bg-[#fcfcfd] p-3 font-semibold text-xs uppercase text-slate-500 grid grid-cols-12 items-center">
+                        <div className="col-span-4 sm:col-span-6">{t('common.name')}</div>
+                        <div className="col-span-8 sm:col-span-6 flex justify-end gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const targetStudents = orgStudents.filter(std => 
+                                attSessionId ? std.classSessions?.includes(attSessionId) : std.subjects.includes(attSubjectId)
+                              );
+                              const newRecords = { ...attRecords };
+                              targetStudents.forEach(s => newRecords[s.id] = 'present');
+                              setAttRecords(newRecords);
+                            }}
+                            className="text-[10px] bg-slate-200 hover:bg-slate-300 text-slate-700 px-2 py-1 rounded cursor-pointer"
+                          >
+                            All Present
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const targetStudents = orgStudents.filter(std => 
+                                attSessionId ? std.classSessions?.includes(attSessionId) : std.subjects.includes(attSubjectId)
+                              );
+                              const newRecords = { ...attRecords };
+                              targetStudents.forEach(s => newRecords[s.id] = 'absent');
+                              setAttRecords(newRecords);
+                            }}
+                            className="text-[10px] bg-slate-200 hover:bg-slate-300 text-slate-700 px-2 py-1 rounded cursor-pointer"
+                          >
+                            All Absent
+                          </button>
+                        </div>
                       </div>
                       <div className="divide-y divide-slate-100">
                         {(() => {
@@ -3953,8 +4309,8 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                                 <button
                                   type="button"
                                   onClick={() => setAttRecords({ ...attRecords, [student.id]: 'present' })}
-                                  className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                                    (attRecords[student.id] || 'present') === 'present' ? 'bg-black text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+                                  className={`px-4 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                                    (attRecords[student.id] || 'present') === 'present' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-400 hover:bg-slate-200'
                                   }`}
                                 >
                                   Present
@@ -3964,8 +4320,8 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                                   onClick={() => {
                                     setAttRecords({ ...attRecords, [student.id]: 'absent' });
                                   }}
-                                  className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                                    attRecords[student.id] === 'absent' ? 'bg-red-600 text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+                                  className={`px-4 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                                    attRecords[student.id] === 'absent' ? 'bg-rose-100 text-rose-700' : 'bg-slate-100 text-slate-400 hover:bg-slate-200'
                                   }`}
                                 >
                                   Absent
@@ -3973,8 +4329,8 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                                 <button
                                   type="button"
                                   onClick={() => setAttRecords({ ...attRecords, [student.id]: 'late' })}
-                                  className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                                    attRecords[student.id] === 'late' ? 'bg-amber-500 text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+                                  className={`px-4 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                                    attRecords[student.id] === 'late' ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-400 hover:bg-slate-200'
                                   }`}
                                 >
                                   Late
@@ -3984,7 +4340,34 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                           ));
                         })()}
                       </div>
-                      <div className="p-4 bg-[#fcfcfd] text-right">
+
+                      {/* Saved Banner — shown after teacher clicks Save */}
+                      {attSaved && (
+                        <div className="mx-4 mb-3 p-3 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center justify-between gap-3">
+                          <div className="flex items-center gap-2">
+                            <div className="w-6 h-6 bg-emerald-500 rounded-full flex items-center justify-center flex-shrink-0">
+                              <svg className="w-3.5 h-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                              </svg>
+                            </div>
+                            <div>
+                              <p className="text-xs font-bold text-emerald-800">Xaadirinta Waa La Keydsaday!</p>
+                              <p className="text-[10px] text-emerald-600">Waxaad wax ka beddeli kartaa kadibna dib u keydi kartaa.</p>
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => setAttSaved(false)}
+                            className="flex items-center gap-1.5 bg-white border border-emerald-300 hover:bg-emerald-50 text-emerald-700 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer shadow-sm"
+                          >
+                            ✏️ Wax ka Beddel
+                          </button>
+                        </div>
+                      )}
+
+                      <div className="p-4 bg-[#fcfcfd] text-right flex items-center justify-between gap-3">
+                        {attSaved && (
+                          <span className="text-[10px] text-slate-400 font-semibold">Waxaad wax ka bedesay? Dib u keydi.</span>
+                        )}
                         <button
                           onClick={() => {
                             const targetStudents = orgStudents.filter(std => 
@@ -3997,7 +4380,12 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                               fullName: s.fullName,
                               status: attRecords[s.id] || 'present'
                             }));
+                            const existingAtt = attendanceRecords.filter(a => a.organizationId === currentOrg?.id).find(a => 
+                              a.date === attDate && 
+                              (attSessionId ? a.sessionId === attSessionId : a.subjectId === attSubjectId)
+                            );
                             saveAttendance({
+                              ...(existingAtt ? { id: existingAtt.id, createdAt: existingAtt.createdAt } : {}),
                               date: attDate,
                               roomId: attRoomId || 'rm-1',
                               subjectId: attSubjectId,
@@ -4006,11 +4394,16 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                               records: recordsArray,
                               organizationId: orgId
                             });
-                            setSuccessMessage('Attendance taken and parents notified on WhatsApp.');
+                            setAttSaved(true);
+                            setSuccessMessage(attSaved ? 'Xaadirinta Waa La Cusboonaysiiyay!' : 'Attendance taken and parents notified on WhatsApp.');
                           }}
-                          className="bg-black hover:bg-slate-800 text-white font-bold text-xs px-5 py-2 rounded-xl transition-all shadow-sm cursor-pointer"
+                          className={`font-bold text-xs px-5 py-2 rounded-xl transition-all shadow-sm cursor-pointer ${
+                            attSaved
+                              ? 'bg-indigo-600 hover:bg-indigo-700 text-white'
+                              : 'bg-black hover:bg-slate-800 text-white'
+                          }`}
                         >
-                          Save & Dispatch Notifications
+                          {attSaved ? '🔄 Cusboonaysii (Update)' : 'Save & Dispatch Notifications'}
                         </button>
                       </div>
                     </div>
@@ -4023,7 +4416,7 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                 <div className="space-y-6">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                     <div>
-                      <h3 className="text-base font-bold text-slate-900">Ardayda Maqan Maalintaas (Daily Absentee List)</h3>
+                      <h3 className="text-base font-bold text-slate-900">{t('attendance.dailyAbsentees')} (Daily Absentee List)</h3>
                       <p className="text-xs text-slate-400">Warbixinta ardayda maqnayd taariikhda la doortay oo faahfaahsan.</p>
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
@@ -4146,12 +4539,12 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                                 <table className="w-full text-left text-xs">
                                   <thead>
                                     <tr className="bg-slate-50 border-b border-slate-100 text-slate-500 font-bold uppercase tracking-wider text-[10px]">
-                                      <th className="p-3.5">Magaca Ardayga (Student Name)</th>
+                                      <th className="p-3.5">{t('common.name')}</th>
                                       <th className="p-3.5">Maaddada / Time Slot</th>
                                       <th className="p-3.5">Class Room / Building</th>
-                                      <th className="p-3.5">Macallinka (Teacher)</th>
+                                      <th className="p-3.5">{t('sidebar.teachers')}</th>
                                       <th className="p-3.5">Mobile-ka Waalidka</th>
-                                      <th className="p-3.5 text-right">Actions</th>
+                                      <th className="p-3.5 text-right">{t('common.action')}</th>
                                     </tr>
                                   </thead>
                                   <tbody className="divide-y divide-slate-100 text-slate-700">
@@ -4201,7 +4594,7 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                 <div className="space-y-6">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                     <div>
-                      <h3 className="text-base font-bold text-slate-900">Maqnaanshaha Xiriirka ah (Consecutive Absences)</h3>
+                      <h3 className="text-base font-bold text-slate-900">Consecutive Absences</h3>
                       <p className="text-xs text-slate-400">La soco ardayda joogtada u maqan toddobaadkii ama bishii oo dhan.</p>
                     </div>
 
@@ -4441,6 +4834,103 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                   })()}
                 </div>
               )}
+
+              {/* Render SUB-TAB: HISTORY (ALL LOGS) */}
+              {attendanceSubTab === 'history' && !isTeacher && (
+                <div className="space-y-6">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div>
+                      <h3 className="text-base font-bold text-slate-900">Diiwaanka Xaadirinta (Attendance History Logs)</h3>
+                      <p className="text-xs text-slate-400">Halkaan waxaad ka arki kartaa dhammaan xaadirintii lasoo qaaday taariikh ahaan.</p>
+                    </div>
+                    <div className="flex items-center gap-2 bg-white px-3 py-2 rounded-xl border border-slate-200 shadow-sm">
+                      <span className="text-xs font-bold text-slate-500">Bisha:</span>
+                      <input 
+                        type="month"
+                        value={historyFilterMonth}
+                        onChange={(e) => setHistoryFilterMonth(e.target.value)}
+                        className="bg-transparent text-xs font-bold text-slate-800 focus:outline-none cursor-pointer"
+                      />
+                    </div>
+                  </div>
+
+                  {(() => {
+                    const filteredHistory = orgAttendance
+                      .filter(record => record.date.startsWith(historyFilterMonth))
+                      .sort((a, b) => b.date.localeCompare(a.date) || (b.createdAt || '').localeCompare(a.createdAt || ''));
+
+                    if (filteredHistory.length === 0) {
+                      return (
+                        <div className="text-center py-16 px-4 bg-white rounded-2xl border border-dashed border-slate-200">
+                          <Calendar className="mx-auto text-slate-300 mb-3" size={40} />
+                          <p className="text-sm font-bold text-slate-600">Wax xaadirin ah lagama qaadin bishaan.</p>
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <div className="bg-white rounded-2xl border border-slate-100 card-shadow overflow-hidden">
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-left text-xs">
+                            <thead>
+                              <tr className="bg-slate-50 border-b border-slate-100 text-slate-500 font-bold uppercase tracking-wider text-[10px]">
+                                <th className="p-4">{t('common.date')}</th>
+                                <th className="p-4">Fasalka / Maadada</th>
+                                <th className="p-4">Total Present</th>
+                                <th className="p-4">Total Absent</th>
+                                <th className="p-4 text-right">{t('common.action')}</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100 text-slate-700">
+                              {filteredHistory.map(record => {
+                                const sub = orgSubjects.find(s => s.id === record.subjectId);
+                                const presentCount = record.records.filter(r => r.status === 'present').length;
+                                const absentCount = record.records.filter(r => r.status === 'absent').length;
+
+                                return (
+                                  <tr key={record.id} className="hover:bg-slate-50/60 transition-colors">
+                                    <td className="p-4">
+                                      <div className="font-bold text-slate-900">{record.date}</div>
+                                      <div className="text-[9px] text-slate-400 font-mono mt-0.5">{new Date(record.createdAt || record.date).toLocaleTimeString()}</div>
+                                    </td>
+                                    <td className="p-4">
+                                      <div className="font-bold text-indigo-900">{sub?.name || 'Class Session'}</div>
+                                    </td>
+                                    <td className="p-4">
+                                      <span className="inline-flex items-center gap-1.5 bg-emerald-50 text-emerald-700 px-2.5 py-1 rounded-lg font-bold text-[11px]">
+                                        {presentCount} Jooga
+                                      </span>
+                                    </td>
+                                    <td className="p-4">
+                                      <span className="inline-flex items-center gap-1.5 bg-rose-50 text-rose-700 px-2.5 py-1 rounded-lg font-bold text-[11px]">
+                                        {absentCount} Maqan
+                                      </span>
+                                    </td>
+                                    <td className="p-4 text-right">
+                                      <button
+                                        onClick={() => {
+                                          setActiveTab('attendance');
+                                          setAttendanceSubTab('take');
+                                          setAttDate(record.date);
+                                          setAttSubjectId(record.subjectId);
+                                          setAttSessionId(record.sessionId || '');
+                                        }}
+                                        className="inline-flex items-center gap-1 bg-slate-900 hover:bg-slate-800 text-white px-3 py-1.5 rounded-lg font-bold text-[10px] transition-all shadow-sm cursor-pointer"
+                                      >
+                                        <Eye size={12} /> Eeg Xaadirinta
+                                      </button>
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
+              )}
             </div>
           )}
 
@@ -4521,7 +5011,7 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                     }`}
                   >
                     <Clock size={14} className={feeSubTab === 'pending' ? 'text-amber-500' : ''} />
-                    <span>Pending Fees ({pendingFeeRecords.length})</span>
+                    <span>{t('fees.pending')} ({pendingFeeRecords.length})</span>
                   </button>
                   <button
                     onClick={() => setFeeSubTab('overdue')}
@@ -4532,7 +5022,7 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                     }`}
                   >
                     <AlertTriangle size={14} className={feeSubTab === 'overdue' ? 'text-white' : 'text-rose-500'} />
-                    <span>Deymaha ({overdueStudentsList.length})</span>
+                    <span>Overdue ({overdueStudentsList.length})</span>
                   </button>
                   <button
                     onClick={() => setFeeSubTab('paid')}
@@ -4553,7 +5043,7 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                 <div className="bg-white rounded-2xl border border-gray-100 card-shadow overflow-hidden flex flex-col">
                   <div className="p-4 border-b border-gray-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                     <div>
-                      <h3 className="text-sm font-bold text-slate-900">Pending Fees (Lacagaha dhiman)</h3>
+                      <h3 className="text-sm font-bold text-slate-900">{t('fees.pending')}</h3>
                       <p className="text-[10px] text-slate-400 mt-0.5">Ardayda aan weli bixin ama laga dhacay khidmada waxbarashada.</p>
                     </div>
                     <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
@@ -4563,7 +5053,7 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                         title="Download All Unpaid Student Fees Report (PDF)"
                       >
                         <Download size={12} />
-                        <span>Dhammaan soo deji (PDF)</span>
+                        <span>{t('fees.downloadAll')}</span>
                       </button>
                       <div className="relative">
                         <Search className="absolute left-3 top-2.5 text-slate-400" size={13} />
@@ -4582,11 +5072,11 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                     <table className="w-full text-left text-xs">
                       <thead>
                         <tr className="bg-[#fcfcfd] border-b border-gray-50 text-slate-500 font-semibold uppercase tracking-wider">
-                          <th className="p-3">Student Name</th>
+                          <th className="p-3">{t('common.name')}</th>
                           <th className="p-3">Outstanding Amount</th>
                           <th className="p-3">Due Date</th>
-                          <th className="p-3">Status</th>
-                          <th className="p-3 text-right">Actions</th>
+                          <th className="p-3">{t('common.status')}</th>
+                          <th className="p-3 text-right">{t('common.action')}</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
@@ -4669,7 +5159,7 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                 <div className="bg-white rounded-2xl border border-gray-100 card-shadow overflow-hidden flex flex-col">
                   <div className="p-4 border-b border-rose-100 bg-rose-50/50 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                     <div>
-                      <h3 className="text-sm font-bold text-rose-900">Overdue Fees (Deymaha)</h3>
+                      <h3 className="text-sm font-bold text-rose-900">{t('fees.overdue')}</h3>
                       <p className="text-[10px] text-rose-500/80 mt-0.5">Ardayda lagu leeyahay 2 bilood ama ka badan.</p>
                     </div>
                   </div>
@@ -4677,10 +5167,10 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                     <table className="w-full text-left text-xs">
                       <thead>
                         <tr className="bg-[#fcfcfd] border-b border-gray-50 text-slate-500 font-semibold uppercase tracking-wider">
-                          <th className="p-3">Student Name</th>
+                          <th className="p-3">{t('common.name')}</th>
                           <th className="p-3">Months Owed</th>
                           <th className="p-3">Total Debt</th>
-                          <th className="p-3 text-right">Actions</th>
+                          <th className="p-3 text-right">{t('common.action')}</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
@@ -4719,7 +5209,7 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                 <div className="bg-white rounded-2xl border border-gray-100 card-shadow overflow-hidden flex flex-col">
                   <div className="p-4 border-b border-gray-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                     <div>
-                      <h3 className="text-sm font-bold text-slate-900">Paid Fees (Lacagaha la bixiyay)</h3>
+                      <h3 className="text-sm font-bold text-slate-900">{t('fees.paid')}</h3>
                       <p className="text-[10px] text-slate-400 mt-0.5">Ardayda si guul leh u bixisay khidmada.</p>
                     </div>
                     <div className="relative">
@@ -4739,10 +5229,10 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                       <thead>
                         <tr className="bg-[#fcfcfd] border-b border-gray-50 text-slate-500 font-semibold uppercase tracking-wider">
                           <th className="p-3">Payment Date</th>
-                          <th className="p-3">Student Name</th>
+                          <th className="p-3">{t('common.name')}</th>
                           <th className="p-3">Amount Paid</th>
                           <th className="p-3">Receipt Number</th>
-                          <th className="p-3 text-right">Actions</th>
+                          <th className="p-3 text-right">{t('common.action')}</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
@@ -4810,7 +5300,7 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
               <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
                 <div>
                   <h2 className="text-xl font-bold tracking-tight text-slate-900">Teacher Payroll / Salary</h2>
-                  <p className="text-xs text-slate-400 mt-1">Maaree mishaaraadka macalimiinta (bixinta iyo risiidhada).</p>
+                  <p className="text-xs text-slate-400 mt-1">Manage teacher salaries (bixinta iyo risiidhada).</p>
                 </div>
 
                 {/* Export Salary Reports Segmented Control */}
@@ -4889,7 +5379,7 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                   <Search className="absolute left-3 top-2.5 text-slate-400" size={13} />
                   <input
                     type="text"
-                    placeholder="Raadi macalin..."
+                    placeholder={t('teachers.searchPlaceholder')}
                     value={salarySearch}
                     onChange={(e) => setSalarySearch(e.target.value)}
                     className="p-1.5 pl-8 text-xs bg-white border border-slate-200 rounded-xl focus:border-black focus:outline-none w-44 shadow-sm"
@@ -4907,7 +5397,7 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                         <th className="p-4">Month</th>
                         <th className="p-4">Salary Amount</th>
                         <th className="p-4">Payout Status</th>
-                        <th className="p-4 text-right">Actions</th>
+                        <th className="p-4 text-right">{t('common.action')}</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
@@ -4978,136 +5468,182 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
           {/* Tab 9: EXAMS */}
           {activeTab === 'exams' && (
             <div className="space-y-6">
-              <div className="flex items-center justify-between">
-                <h2 className="text-xl font-bold tracking-tight text-slate-900">School & Subject Examinations</h2>
-                <button 
-                  onClick={() => {
-                    setExamForm({ title: '', type: 'class', subjectId: '', targetClass: '', sessionId: '' });
-                    setActiveModal('addExam');
-                  }}
-                  className="flex items-center gap-1.5 bg-black hover:bg-slate-800 text-white font-semibold text-xs px-4 py-2 rounded-xl transition-colors shadow-sm cursor-pointer"
-                >
-                  <Plus size={16} /> Create Exam
-                </button>
-              </div>
+              {isTeacher ? (
+                renderTeacherExamFlow()
+              ) : (
+                <>
+                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-6 rounded-2xl border border-gray-100 card-shadow">
+                    <div>
+                      <h2 className="text-2xl font-bold tracking-tight text-slate-900">Examinations</h2>
+                      <p className="text-sm text-slate-500 mt-1">Manage school and subject exams, and approve results.</p>
+                    </div>
+                    <button 
+                      onClick={() => {
+                        setExamForm({ title: '', type: 'class', subjectId: '', targetClass: '', sessionId: '' });
+                        setActiveModal('addExam');
+                      }}
+                      className="flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-5 py-2.5 rounded-xl transition-all shadow-md hover:shadow-lg w-full md:w-auto"
+                    >
+                      <Plus size={18} /> Create Exam
+                    </button>
+                  </div>
 
-              <div className="bg-white p-6 rounded-2xl border border-gray-100 card-shadow space-y-6">
-                <div className="divide-y divide-slate-100">
-                  {orgExams.map(ex => (
-                    <div key={ex.id} className="py-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
-                      <div>
-                        <h4 className="text-base font-bold text-slate-900">{ex.title}</h4>
-                        <div className="flex flex-wrap gap-2 items-center text-xs text-slate-400 mt-1">
-                          <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase ${
-                            ex.type === 'school'
-                              ? 'bg-purple-50 text-purple-700 border border-purple-100'
-                              : 'bg-indigo-50 text-indigo-700 border border-indigo-100'
-                          }`}>
-                            {ex.type === 'school' ? 'Whole School' : 'Subject Exam'}
-                          </span>
-                          {ex.type === 'class' && (
-                            <>
-                              <span>•</span>
-                              <span>Subject: <strong className="text-slate-700">{orgSubjects.find(s => s.id === ex.subjectId)?.name || 'Unknown'}</strong></span>
-                              <span>•</span>
-                              <span>Room: <strong className="text-slate-700">{ex.targetClass}</strong></span>
-                            </>
-                          )}
-                          {ex.type === 'school' && (
-                            <>
-                              <span>•</span>
-                              <span>Room: <strong className="text-slate-700">All Rooms</strong></span>
-                            </>
-                          )}
-                        </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <div className="bg-white p-5 rounded-2xl border border-gray-100 card-shadow flex items-center gap-4">
+                      <div className="w-12 h-12 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-600">
+                        <BookOpen size={24} />
                       </div>
-
-                      <div className="flex flex-wrap gap-2">
-                        <button
-                          onClick={() => {
-                            setSelectedExam(ex);
-                            const defaults: any = {};
-                            orgStudents.forEach(s => {
-                              defaults[s.id] = 85; // Seeding default mark
-                            });
-                            setMarksData(defaults);
-                            setActiveModal('enterMarks');
-                          }}
-                          className="bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold px-3 py-1.5 rounded-xl cursor-pointer transition-colors"
-                        >
-                          Manual Marks Entry
-                        </button>
-
-                        {!ex.published && (
-                          <button
-                            onClick={() => {
-                              approveExamResults(ex.id);
-                              setSuccessMessage('Exam results approved and published to the student portal!');
-                              setSharingExam(ex);
-                            }}
-                            className="bg-black hover:bg-slate-800 text-white text-xs font-bold px-3 py-1.5 rounded-xl cursor-pointer transition-colors shadow-sm"
-                          >
-                            Approve & Publish Results
-                          </button>
-                        )}
-
-                        {ex.published && (
-                          <div className="flex items-center gap-1.5">
-                            <span className="status-badge bg-success font-semibold px-3 py-1.5 rounded-xl flex items-center gap-1">
-                              <Check size={14} /> Published Live
-                            </span>
-                            <button
-                              onClick={() => setSharingExam(ex)}
-                              className="bg-emerald-50 hover:bg-emerald-100 text-emerald-600 text-xs font-semibold px-3 py-1.5 rounded-xl cursor-pointer transition-all border border-emerald-100 inline-flex items-center gap-1"
-                              title="La wadaag ardayda"
-                            >
-                              <Share2 size={12} />
-                              <span>Wadaag Links</span>
-                            </button>
-                          </div>
-                        )}
-
-                        <button
-                          onClick={() => {
-                            setEditingExam(ex);
-                            setEditExamForm({
-                              title: ex.title,
-                              type: ex.type,
-                              subjectId: ex.subjectId || '',
-                              targetClass: ex.targetClass || '',
-                              sessionId: ex.sessionId || ''
-                            });
-                          }}
-                          className="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-semibold px-3 py-1.5 rounded-xl cursor-pointer transition-all border border-indigo-100 inline-flex items-center gap-1"
-                          title="Soo sax mashaariicda/imtixaanka"
-                        >
-                          <Edit2 size={12} />
-                          <span>Edit</span>
-                        </button>
-
-                        <button
-                          onClick={async () => {
-                          if (await showConfirm('Ma hubtaa in aad tirtirto imtixaankan?')) {
-                              deleteExam(ex.id);
-                              setSuccessMessage('Imtixaanka waa la tirtiray (Exam deleted successfully).');
-                            }
-                          }}
-                          className="bg-red-50 hover:bg-red-100 text-red-600 text-xs font-semibold px-3 py-1.5 rounded-xl cursor-pointer transition-all border border-red-100 inline-flex items-center gap-1"
-                          title="Tirtir imtixaanka"
-                        >
-                          <Trash2 size={12} />
-                          <span>Delete</span>
-                        </button>
+                      <div>
+                        <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Total Exams</p>
+                        <p className="text-2xl font-black text-slate-900">{orgExams.length}</p>
                       </div>
                     </div>
-                  ))}
-                </div>
-              </div>
+                    <div className="bg-white p-5 rounded-2xl border border-gray-100 card-shadow flex items-center gap-4">
+                      <div className="w-12 h-12 rounded-xl bg-green-50 flex items-center justify-center text-green-600">
+                        <CheckCircle2 size={24} />
+                      </div>
+                      <div>
+                        <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Published</p>
+                        <p className="text-2xl font-black text-slate-900">{orgExams.filter(e => e.published).length}</p>
+                      </div>
+                    </div>
+                    <div className="bg-white p-5 rounded-2xl border border-gray-100 card-shadow flex items-center gap-4">
+                      <div className="w-12 h-12 rounded-xl bg-orange-50 flex items-center justify-center text-orange-600">
+                        <AlertCircle size={24} />
+                      </div>
+                      <div>
+                        <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Pending</p>
+                        <p className="text-2xl font-black text-slate-900">{orgExams.filter(e => !e.published).length}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="bg-white rounded-2xl border border-gray-100 card-shadow overflow-hidden">
+                    <div className="p-6 border-b border-slate-100 flex items-center justify-between">
+                      <h3 className="text-lg font-bold text-slate-900">All Exam Sessions</h3>
+                    </div>
+                    <div className="divide-y divide-slate-100">
+                      {orgExams.length === 0 ? (
+                        <div className="p-8 text-center text-slate-400 font-medium">No exams created yet.</div>
+                      ) : (
+                        orgExams.map(ex => (
+                          <div key={ex.id} className="p-6 flex flex-col xl:flex-row xl:items-center justify-between gap-6 hover:bg-slate-50 transition-colors">
+                            <div className="space-y-2">
+                              <div className="flex items-center gap-3">
+                                <h4 className="text-lg font-bold text-slate-900">{ex.title}</h4>
+                                {ex.published ? (
+                                  <span className="status-badge bg-success">
+                                    <Check size={14} /> Published
+                                  </span>
+                                ) : (
+                                  <span className="status-badge bg-warning">
+                                    <AlertCircle size={14} /> Draft
+                                  </span>
+                                )}
+                              </div>
+                              <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-slate-500 font-medium">
+                                <span className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold ${
+                                  ex.type === 'school' ? 'bg-purple-50 text-purple-700' : 'bg-blue-50 text-blue-700'
+                                }`}>
+                                  {ex.type === 'school' ? 'Whole School' : 'Subject Exam'}
+                                </span>
+                                {ex.type === 'class' && (
+                                  <>
+                                    <span className="flex items-center gap-1.5"><BookOpen size={14}/> {orgSubjects.find(s => s.id === ex.subjectId)?.name || 'Unknown'}</span>
+                                    <span className="flex items-center gap-1.5"><Users size={14}/> {ex.targetClass}</span>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+
+                            <div className="flex flex-wrap items-center gap-2">
+                              <button
+                                onClick={() => {
+                                  setSelectedExam(ex);
+                                  const defaults: any = {};
+                                  orgStudents.forEach(s => { defaults[s.id] = 0; });
+                                  setMarksData(defaults);
+                                  setActiveModal('enterMarks');
+                                }}
+                                className="px-4 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-sm rounded-xl transition-colors flex items-center gap-2"
+                              >
+                                <Edit2 size={16} /> Enter Marks
+                              </button>
+                              
+                              <div className="flex items-center gap-1 bg-slate-50 p-1 rounded-xl border border-slate-200">
+                                <button
+                                  onClick={() => {
+                                    setSelectedExam(ex);
+                                    if (marksFileInputRef.current) marksFileInputRef.current.click();
+                                  }}
+                                  className="p-2 text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
+                                  title="Upload Excel"
+                                >
+                                  <Upload size={16} />
+                                </button>
+                                <button
+                                  onClick={() => handleDownloadTemplate(ex)}
+                                  className="p-2 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+                                  title="Download Template"
+                                >
+                                  <Download size={16} />
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    setEditingExam(ex);
+                                    setEditExamForm({
+                                      title: ex.title, type: ex.type, subjectId: ex.subjectId || '', targetClass: ex.targetClass || '', sessionId: ex.sessionId || ''
+                                    });
+                                  }}
+                                  className="p-2 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                                  title="Edit Exam"
+                                >
+                                  <Edit2 size={16} />
+                                </button>
+                                <button
+                                  onClick={async () => {
+                                    if (await showConfirm('Ma hubtaa in aad tirtirto imtixaankan?')) {
+                                      deleteExam(ex.id);
+                                      setSuccessMessage('Exam deleted successfully.');
+                                    }
+                                  }}
+                                  className="p-2 text-slate-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                                  title="Delete Exam"
+                                >
+                                  <Trash2 size={16} />
+                                </button>
+                              </div>
+
+                              {!ex.published ? (
+                                <button
+                                  onClick={() => {
+                                    approveExamResults(ex.id);
+                                    setSuccessMessage('Exam results approved and published to the student portal!');
+                                    setSharingExam(ex);
+                                  }}
+                                  className="px-4 py-2 bg-black hover:bg-slate-800 text-white font-bold text-sm rounded-xl transition-colors shadow-sm"
+                                >
+                                  Approve
+                                </button>
+                              ) : (
+                                <button
+                                  onClick={() => setSharingExam(ex)}
+                                  className="px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white font-bold text-sm rounded-xl transition-colors shadow-sm flex items-center gap-2"
+                                >
+                                  <Share2 size={16} /> Share
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
           )}
 
-
-          {/* Tab 10: REPORTS */}
           {activeTab === 'reports' && (
             <div className="space-y-6">
               <h2 className="text-xl font-bold tracking-tight text-slate-900">System Reports</h2>
@@ -5194,7 +5730,7 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
 
                   <form onSubmit={handleStaffSubmit} className="space-y-4">
                     <div className="space-y-1.5">
-                      <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Magaca Buuxa (Full Name)</label>
+                      <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">{t('settings.fullName')}</label>
                       <input 
                         type="text" 
                         value={staffName}
@@ -5244,7 +5780,7 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
 
                     {/* Permissions Checkboxes */}
                     <div className="space-y-2 pt-2 border-t border-slate-100 mt-2">
-                      <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block mb-2">Awoodaha (Permissions)</label>
+                      <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block mb-2">Permissions</label>
                       <div className="grid grid-cols-2 gap-2 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
                         {ALL_PERMISSIONS.map(perm => (
                           <label key={perm.key} className="flex items-center gap-2.5 p-2 rounded-lg hover:bg-slate-50 border border-transparent hover:border-slate-100 cursor-pointer transition-colors col-span-1">
@@ -5274,7 +5810,7 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                 <div className="xl:col-span-2 space-y-4">
                   <div className="bg-white rounded-2xl border border-gray-100 card-shadow overflow-hidden">
                     <div className="p-4 border-b border-slate-100 bg-slate-50/50">
-                       <h4 className="text-sm font-bold text-slate-900">Shaqaalaha Diiwaan Gashan (Registered Staff)</h4>
+                       <h4 className="text-sm font-bold text-slate-900">{t('staff.registered')}</h4>
                     </div>
                     <div className="overflow-x-auto">
                       <table className="w-full text-left text-xs">
@@ -5282,7 +5818,7 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                           <tr className="bg-white border-b border-slate-100 text-slate-500 font-bold uppercase tracking-wider">
                             <th className="p-4">Magaca & Xilka</th>
                             <th className="p-4">Email</th>
-                            <th className="p-4 hidden sm:table-cell">Awoodaha (Permissions)</th>
+                            <th className="p-4 hidden sm:table-cell">Permissions</th>
                             <th className="p-4">Xaalada</th>
                             <th className="p-4 text-right">Waxqabad</th>
                           </tr>
@@ -5478,14 +6014,14 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
           {/* Tab 11: SETTINGS */}
           {activeTab === 'settings' && (
             <div className="space-y-6">
-              <h2 className="text-xl font-bold tracking-tight text-slate-900">Astaamaha Dugsiga (Settings)</h2>
+              <h2 className="text-xl font-bold tracking-tight text-slate-900">{t('settings.title')}</h2>
               
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {/* Qaybta Macluumaadka Guud (General Info - Name Change) */}
                 <div className="bg-white p-6 rounded-2xl border border-gray-100 card-shadow space-y-4">
                   <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
                     <Users size={20} className="text-black" />
-                    <h3 className="text-sm font-sans font-bold text-slate-900">Bedel Magacaaga (Change Name)</h3>
+                    <h3 className="text-sm font-sans font-bold text-slate-900">Change Name</h3>
                   </div>
 
                   {nameError && (
@@ -5502,7 +6038,7 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
 
                   <form onSubmit={handleNameSubmit} className="space-y-4">
                     <div className="space-y-1.5">
-                      <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Magacaaga Buuxa (Full Name)</label>
+                      <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Magacaaga Buuxa ({t('settings.fullName')})</label>
                       <input 
                         type="text" 
                         value={adminName}
@@ -5519,17 +6055,21 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                       className="w-full text-xs font-semibold bg-black hover:bg-slate-800 text-white py-3 rounded-xl transition-colors cursor-pointer flex items-center justify-center gap-1.5 shadow-sm disabled:bg-slate-400"
                     >
                       {nameLoading ? <RefreshCw size={14} className="animate-spin" /> : <Check size={14} />}
-                      <span>Save Changes / Keydi Isbedelka</span>
+                      <span>{t('settings.updateProfile')}</span>
                     </button>
                   </form>
                 </div>
 
-                {/* Qaybta Ereyga Sirta ah (Password Change Form) */}
-                <div className="bg-white p-6 rounded-2xl border border-gray-100 card-shadow space-y-4">
+                {/* Qaybta Ereyga Sirta ah (Password Reset Email Form) */}
+                <div className="bg-white p-5 sm:p-6 rounded-2xl border border-gray-100 card-shadow space-y-4 overflow-hidden">
                   <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
                     <KeyRound size={20} className="text-black" />
-                    <h3 className="text-sm font-sans font-bold text-slate-900">Bedel Password-ka (Change Password)</h3>
+                    <h3 className="text-sm font-sans font-bold text-slate-900">{t('settings.changePassword')}</h3>
                   </div>
+
+                  <p className="text-xs text-slate-500 font-semibold leading-relaxed">
+                    {t('settings.securityNotice')}
+                  </p>
 
                   {settingsPasswordError && (
                     <div className="p-3 bg-red-50 text-red-700 rounded-xl border border-red-100 text-xs font-semibold">
@@ -5543,42 +6083,29 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                     </div>
                   )}
 
-                  <form onSubmit={handleSettingsPasswordSubmit} className="space-y-4">
-                    <div className="space-y-1.5">
-                      <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Password-ka Cusub (New Password)</label>
-                      <input 
-                        type="password" 
-                        value={settingsNewPassword}
-                        onChange={(e) => setSettingsNewPassword(e.target.value)}
-                        placeholder="Gali password cusub (ugu yaraan 6 xaraf)"
-                        required
-                        minLength={6}
-                        className="w-full text-xs px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-black/10 focus:border-black transition-all"
-                      />
+                  <div className="p-4 sm:p-5 bg-slate-50 border border-slate-100 rounded-2xl flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                    <div className="flex items-center gap-3 overflow-hidden min-w-0">
+                      <div className="w-10 h-10 sm:w-12 sm:h-12 bg-indigo-50 text-indigo-600 rounded-xl flex items-center justify-center shrink-0">
+                        <User size={20} />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">{t('settings.emailToSend')}</p>
+                        <p className="text-xs sm:text-sm font-bold text-slate-900 truncate" title={currentUser?.email || 'N/A'}>
+                          {currentUser?.email || 'N/A'}
+                        </p>
+                      </div>
                     </div>
-
-                    <div className="space-y-1.5">
-                      <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Hubi Password-ka (Confirm Password)</label>
-                      <input 
-                        type="password" 
-                        value={settingsConfirmPassword}
-                        onChange={(e) => setSettingsConfirmPassword(e.target.value)}
-                        placeholder="Ku celi password-ka cusub"
-                        required
-                        minLength={6}
-                        className="w-full text-xs px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-black/10 focus:border-black transition-all"
-                      />
-                    </div>
-
+                    
                     <button 
-                      type="submit"
+                      type="button"
+                      onClick={handleSettingsPasswordReset}
                       disabled={settingsPasswordLoading}
-                      className="w-full text-xs font-semibold bg-black hover:bg-slate-800 text-white py-3 rounded-xl transition-colors cursor-pointer flex items-center justify-center gap-1.5 shadow-sm disabled:bg-slate-400"
+                      className="text-xs font-semibold bg-black hover:bg-slate-800 text-white px-5 py-3 rounded-xl transition-colors cursor-pointer flex items-center justify-center gap-2 shadow-sm disabled:bg-slate-400 w-full lg:w-auto shrink-0"
                     >
-                      {settingsPasswordLoading ? <RefreshCw size={14} className="animate-spin" /> : <KeyRound size={14} />}
-                      <span>Update Password / Bedel Ereyga Sirta ah</span>
+                      {settingsPasswordLoading ? <RefreshCw size={16} className="animate-spin" /> : <Send size={16} />}
+                      <span className="whitespace-nowrap">{t('settings.sendCode')}</span>
                     </button>
-                  </form>
+                  </div>
                 </div>
               </div>
 
@@ -5590,8 +6117,6 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
       </div>
 
       {/* Mobile Burger Navigation */}
-      {!isTeacher && (
-        <>
           {isMobileMenuOpen && (
             <div className="fixed inset-0 z-50 lg:hidden">
               <button
@@ -5623,7 +6148,7 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                     className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl border text-left transition-colors ${activeTab === 'dashboard' ? 'bg-slate-900 text-white border-slate-900' : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'}`}
                   >
                     <LayoutDashboard size={18} />
-                    <span className="font-semibold">Dashboard</span>
+                    <span className="font-semibold">{t('sidebar.dashboard')}</span>
                   </button>
 
                   {hasPermission('Students') && (
@@ -5632,7 +6157,7 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                       className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl border text-left transition-colors ${activeTab === 'students' ? 'bg-slate-900 text-white border-slate-900' : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'}`}
                     >
                       <GraduationCap size={18} />
-                      <span className="font-semibold">Students</span>
+                      <span className="font-semibold">{t('sidebar.students')}</span>
                     </button>
                   )}
 
@@ -5642,7 +6167,7 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                       className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl border text-left transition-colors ${activeTab === 'teachers' ? 'bg-slate-900 text-white border-slate-900' : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'}`}
                     >
                       <Users size={18} />
-                      <span className="font-semibold">Teachers</span>
+                      <span className="font-semibold">{t('sidebar.teachers')}</span>
                     </button>
                   )}
 
@@ -5652,7 +6177,7 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                       className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl border text-left transition-colors ${activeTab === 'subjects' ? 'bg-slate-900 text-white border-slate-900' : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'}`}
                     >
                       <BookOpen size={18} />
-                      <span className="font-semibold">Subjects</span>
+                      <span className="font-semibold">{t('sidebar.subjects')}</span>
                     </button>
                   )}
 
@@ -5662,7 +6187,7 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                       className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl border text-left transition-colors ${activeTab === 'class-sessions' ? 'bg-slate-900 text-white border-slate-900' : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'}`}
                     >
                       <Clock size={18} />
-                      <span className="font-semibold">Class Sessions</span>
+                      <span className="font-semibold">{t('sidebar.classes')}</span>
                     </button>
                   )}
 
@@ -5672,7 +6197,7 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                       className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl border text-left transition-colors ${activeTab === 'rooms' ? 'bg-slate-900 text-white border-slate-900' : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'}`}
                     >
                       <School size={18} />
-                      <span className="font-semibold">Rooms</span>
+                      <span className="font-semibold">{t('sidebar.classes')}</span>
                     </button>
                   )}
 
@@ -5682,7 +6207,7 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                       className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl border text-left transition-colors ${activeTab === 'attendance' ? 'bg-slate-900 text-white border-slate-900' : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'}`}
                     >
                       <Calendar size={18} />
-                      <span className="font-semibold">Attendance</span>
+                      <span className="font-semibold">{t('sidebar.attendance')}</span>
                     </button>
                   )}
 
@@ -5692,7 +6217,7 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                       className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl border text-left transition-colors ${activeTab === 'fees' ? 'bg-slate-900 text-white border-slate-900' : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'}`}
                     >
                       <DollarSign size={18} />
-                      <span className="font-semibold">Tuition Fees</span>
+                      <span className="font-semibold">{t('sidebar.fees')}</span>
                     </button>
                   )}
 
@@ -5706,13 +6231,13 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                     </button>
                   )}
 
-                  {hasPermission('Exams') && (
+                  {(hasPermission('Exams') || isTeacher) && (
                     <button
                       onClick={() => { setActiveTab('exams'); setIsMobileMenuOpen(false); }}
                       className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl border text-left transition-colors ${activeTab === 'exams' ? 'bg-slate-900 text-white border-slate-900' : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'}`}
                     >
                       <Award size={18} />
-                      <span className="font-semibold">Exams</span>
+                      <span className="font-semibold">{isTeacher ? 'Submit Exam Marks' : 'Exams'}</span>
                     </button>
                   )}
 
@@ -5732,7 +6257,7 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                       className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl border text-left transition-colors ${activeTab === 'staff' ? 'bg-slate-900 text-white border-slate-900' : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'}`}
                     >
                       <Users size={18} />
-                      <span className="font-semibold">Staff Management</span>
+                      <span className="font-semibold">{t('sidebar.staff')}</span>
                     </button>
                   )}
 
@@ -5742,7 +6267,7 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                       className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl border text-left transition-colors ${activeTab === 'settings' ? 'bg-slate-900 text-white border-slate-900' : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'}`}
                     >
                       <Settings size={18} />
-                      <span className="font-semibold">Settings</span>
+                      <span className="font-semibold">{t('sidebar.settings')}</span>
                     </button>
                   )}
 
@@ -5758,8 +6283,6 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
               </div>
             </div>
           )}
-        </>
-      )}
 
       {activeModal === 'viewReceipt' && selectedFee && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs overflow-y-auto">
@@ -5793,7 +6316,8 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
               <div className="grid grid-cols-2 gap-4 text-xs">
                 <div>
                   <span className="block text-[9px] font-bold text-slate-400 uppercase">Ardayga / Student</span>
-                  <span className="font-semibold text-slate-800">{selectedFee.studentName}</span>
+                  <span className="font-semibold text-slate-800 block">{selectedFee.studentName}</span>
+                  <span className="text-[10px] text-slate-500 font-mono mt-0.5 block">ID: {allOrgStudents.find(s => s.id === selectedFee.studentId || s.fullName === selectedFee.studentName)?.studentId || selectedFee.studentId}</span>
                 </div>
                 <div>
                   <span className="block text-[9px] font-bold text-slate-400 uppercase">Receipt / Invoice No</span>
@@ -5850,7 +6374,7 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                 onClick={() => printReceipt(selectedFee)}
                 className="flex items-center gap-1.5 bg-black hover:bg-slate-800 text-white font-semibold text-xs px-4 py-2 rounded-xl cursor-pointer"
               >
-                <Printer size={14} /> Daabac (Print PDF)
+                <Printer size={14} /> {t('common.print')}
               </button>
               <button
                 onClick={() => sendWhatsAppReceipt(selectedFee)}
@@ -5875,92 +6399,111 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
       {/* Modal - Add Student */}
       {activeModal === 'addStudent' && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs">
-          <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-gray-100/80 flex flex-col space-y-4">
-            <h3 className="text-base font-bold text-slate-900 border-b border-slate-100 pb-3">
+          <div className="bg-white rounded-[1.5rem] max-w-lg w-full p-5 shadow-2xl border border-gray-100/80 flex flex-col space-y-3">
+            <h3 className="text-base font-bold text-slate-900 border-b border-slate-100 pb-2.5">
               {selectedStudent ? 'Wax ka bedel Profile-ka Ardayga (Edit Student)' : 'Register Student Profile'}
             </h3>
-            <form onSubmit={handleAddStudentSubmit} className="space-y-4 text-xs">
-              <div className="grid grid-cols-2 gap-4">
+            <form onSubmit={handleAddStudentSubmit} className="space-y-3 text-xs">
+              <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-[11px] font-semibold text-slate-500 mb-1">Full Name</label>
+                  <label className="block text-[10px] font-semibold text-slate-500 mb-1">{t('settings.fullName')}</label>
                   <input
                     type="text" required
                     value={studentForm.fullName}
                     onChange={(e) => setStudentForm({ ...studentForm, fullName: e.target.value })}
-                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:border-black focus:outline-none text-xs font-semibold"
+                    className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl focus:border-black focus:outline-none text-xs font-semibold"
                   />
                 </div>
-                <div>
-                  <label className="block text-[11px] font-semibold text-slate-500 mb-1">Gender</label>
-                  <select
-                    value={studentForm.gender}
-                    onChange={(e) => setStudentForm({ ...studentForm, gender: e.target.value as any })}
-                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:border-black focus:outline-none text-xs font-semibold"
-                  >
-                    <option value="male">Male</option>
-                    <option value="female">Female</option>
-                  </select>
-                </div>
+                {!isQuranSchool && (
+                  <div>
+                    <label className="block text-[10px] font-semibold text-slate-500 mb-1">{t('common.gender')}</label>
+                    <select
+                      value={studentForm.gender}
+                      onChange={(e) => setStudentForm({ ...studentForm, gender: e.target.value as any })}
+                      className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl focus:border-black focus:outline-none text-xs font-semibold"
+                    >
+                      <option value="male">Male</option>
+                      <option value="female">Female</option>
+                    </select>
+                  </div>
+                )}
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-[11px] font-semibold text-slate-500 mb-1">Student Mobile Phone</label>
+                  <label className="block text-[10px] font-semibold text-slate-500 mb-1">Student Mobile Phone</label>
                   <input
-                    type="text" placeholder="e.g. +252615xxxxxx"
+                    type="text" placeholder="+252615xxxxxx"
                     value={studentForm.studentPhone}
-                    onChange={(e) => setStudentForm({ ...studentForm, studentPhone: e.target.value })}
-                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:border-black focus:outline-none text-xs font-semibold"
+                    onChange={(e) => setStudentForm({ ...studentForm, studentPhone: e.target.value.replace(/[^0-9+ ]/g, '') })}
+                    className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl focus:border-black focus:outline-none text-xs font-semibold"
                   />
                 </div>
                 <div>
-                  <label className="block text-[11px] font-semibold text-slate-500 mb-1">Parent Mobile (WhatsApp)</label>
+                  <label className="block text-[10px] font-semibold text-slate-500 mb-1">Parent Mobile (WhatsApp)</label>
                   <input
-                    type="text" required placeholder="e.g. +252615000000"
+                    type="text" required placeholder="+252615000000"
                     value={studentForm.parentPhone}
-                    onChange={(e) => setStudentForm({ ...studentForm, parentPhone: e.target.value })}
-                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:border-black focus:outline-none text-xs font-semibold"
+                    onChange={(e) => setStudentForm({ ...studentForm, parentPhone: e.target.value.replace(/[^0-9+ ]/g, '') })}
+                    className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl focus:border-black focus:outline-none text-xs font-semibold"
                   />
                 </div>
               </div>
 
-              <div>
-                <label className="block text-[11px] font-semibold text-slate-500 mb-1">Address Location</label>
-                <input
-                  type="text" required
-                  value={studentForm.address}
-                  onChange={(e) => setStudentForm({ ...studentForm, address: e.target.value })}
-                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:border-black focus:outline-none text-xs font-semibold"
-                />
-              </div>
-
-              {formError && (
-                <div className="p-3 bg-red-50 border border-red-100 rounded-2xl">
-                  <p className="text-[11px] font-bold text-red-700 leading-relaxed">{formError}</p>
+              {!isQuranSchool && (
+                <div>
+                  <label className="block text-[10px] font-semibold text-slate-500 mb-1">Address Location</label>
+                  <input
+                    type="text" required
+                    value={studentForm.address}
+                    onChange={(e) => setStudentForm({ ...studentForm, address: e.target.value })}
+                    className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl focus:border-black focus:outline-none text-xs font-semibold"
+                  />
                 </div>
               )}
 
-              <div className="border-t border-b border-slate-100 py-3 my-2 space-y-3">
-                <div className="space-y-1.5">
-                  <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider">Dooro Class Sessions (Select Class Sessions) *</label>
-                  <div className="space-y-4 bg-slate-50 p-4 rounded-2xl border border-slate-200/60 max-h-64 overflow-y-auto">
+              {formError && (
+                <div className="p-2 bg-red-50 border border-red-100 rounded-xl">
+                  <p className="text-[10px] font-bold text-red-700 leading-relaxed">{formError}</p>
+                </div>
+              )}
+
+              <div className="border-t border-b border-slate-100 py-2 my-1 space-y-2">
+                {isQuranSchool ? (
+                  <div className="space-y-1">
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">Dooro Qolka (Select Room) *</label>
+                    <select
+                      value={studentForm.roomId || ''}
+                      onChange={(e) => setStudentForm({ ...studentForm, roomId: e.target.value })}
+                      className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl focus:border-black focus:outline-none text-xs font-semibold"
+                    >
+                      <option value="">Fadlan dooro qol...</option>
+                      {allOrgRooms.map(r => (
+                        <option key={r.id} value={r.id}>{r.roomNumber} (Qaadaa: {r.capacity})</option>
+                      ))}
+                    </select>
+                  </div>
+                ) : (
+                  <div className="space-y-1">
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">Dooro Class Sessions *</label>
+                    <div className="space-y-2 bg-slate-50 p-2.5 rounded-xl border border-slate-200/60 max-h-48 overflow-y-auto scrollbar-thin">
                     {allOrgSubjects.length === 0 ? (
-                      <p className="text-slate-400 text-[11px]">Fadlan marka hore sameey maddooyin iyo Class Sessions (No subjects or class sessions created yet).</p>
+                      <p className="text-slate-400 text-[10px]">No subjects or class sessions created yet.</p>
                     ) : (
                       allOrgSubjects.map(sub => {
                         const sessions = allOrgClassSessions.filter(cs => cs.subjectId === sub.id && cs.status === 'active');
                         if (sessions.length === 0) return null;
                         
                         return (
-                          <div key={sub.id} className="space-y-1.5 border-b border-slate-100 pb-3 last:border-0 last:pb-0">
-                            <span className="font-bold text-slate-900 text-xs block">{sub.name}</span>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          <div key={sub.id} className="space-y-1 border-b border-slate-100 pb-2 last:border-0 last:pb-0">
+                            <span className="font-bold text-slate-900 text-[11px] block">{sub.name}</span>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
                               {sessions.map(cs => {
                                 const isChecked = studentForm.classSessions?.includes(cs.id);
                                 const rm = allOrgRooms.find(r => r.id === cs.roomId);
                                 const teacher = allOrgTeachers.find(t => t.id === cs.teacherId);
                                 return (
-                                  <label key={cs.id} className={`flex items-start gap-2.5 p-2.5 rounded-xl border transition-all cursor-pointer ${
+                                  <label key={cs.id} className={`flex items-start gap-2 p-2 rounded-lg border transition-all cursor-pointer ${
                                     isChecked ? 'border-black bg-black/5 shadow-xs' : 'border-slate-200 hover:border-slate-300 bg-white'
                                   }`}>
                                     <input
@@ -5979,16 +6522,16 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                                       className="mt-0.5 rounded border-slate-300 text-black focus:ring-black cursor-pointer"
                                     />
                                     <div className="space-y-0.5">
-                                      <span className="font-bold text-slate-800 block leading-tight text-xs">
+                                      <span className="font-bold text-slate-800 block leading-tight text-[11px]">
                                         {cs.classCode}
                                       </span>
-                                      <span className="text-[10px] text-slate-500 font-medium block">
+                                      <span className="text-[9px] text-slate-500 font-medium block">
                                         Macallin: {teacher ? teacher.fullName : 'No Teacher'}
                                       </span>
-                                      <span className="text-[10px] text-indigo-600 font-mono font-semibold block">
-                                        {rm ? `Qolka: ${rm.roomNumber}` : 'Qolka: No Room'} | {cs.startTime} - {cs.endTime}
+                                      <span className="text-[9px] text-indigo-600 font-mono font-bold block">
+                                        Qolka: {rm ? rm.roomNumber : 'N/A'} | {cs.startTime} - {cs.endTime}
                                       </span>
-                                      <span className="text-[9px] text-slate-400 block font-semibold uppercase">
+                                      <span className="text-[8px] text-slate-400 font-bold uppercase block leading-tight">
                                         Maalmaha: {cs.days.join(', ')}
                                       </span>
                                     </div>
@@ -6000,16 +6543,15 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                         );
                       })
                     )}
-                    {allOrgClassSessions.filter(cs => cs.status === 'active').length === 0 && (
-                      <p className="text-slate-400 text-[11px] text-center py-4">No active class sessions available. Please create class sessions first.</p>
-                    )}
+                    </div>
                   </div>
-                </div>
-
-                {/* Real-time Validation Overlap Warning */}
+                )}
+                
+                {/* Overlap Warning Component */}
                 {(() => {
+                  if (isQuranSchool) return null;
                   const selectedSessions = allOrgClassSessions.filter(cs => studentForm.classSessions?.includes(cs.id));
-                  let overlapText: string | null = null;
+                  let overlapText = '';
                   for (let i = 0; i < selectedSessions.length; i++) {
                     for (let j = i + 1; j < selectedSessions.length; j++) {
                       const cs1 = selectedSessions[i];
@@ -6017,15 +6559,15 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                       const daysOverlap = cs1.days.some(d => cs2.days.includes(d));
                       const timeOverlap = cs1.startTime < cs2.endTime && cs2.startTime < cs1.endTime;
                       if (daysOverlap && timeOverlap) {
-                        overlapText = `Digtooni Isku-dhac (Overlap): "${cs1.classCode}" (${cs1.startTime} - ${cs1.endTime}) iyo "${cs2.classCode}" (${cs2.startTime} - ${cs2.endTime}) way isku dhacayaan maalmaha isku midka ah.`;
+                        overlapText = `Digtooni: "${cs1.classCode}" iyo "${cs2.classCode}" way isku dhacayaan waqtiga.`;
                         break;
                       }
                     }
                   }
                   if (overlapText) {
                     return (
-                      <div className="p-2.5 bg-amber-50 border border-amber-100 rounded-xl">
-                        <p className="text-[10px] font-bold text-amber-800 leading-normal">{overlapText}</p>
+                      <div className="p-2 bg-amber-50 border border-amber-100 rounded-xl">
+                        <p className="text-[10px] font-bold text-amber-700 leading-relaxed">{overlapText}</p>
                       </div>
                     );
                   }
@@ -6033,22 +6575,22 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                 })()}
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-[11px] font-semibold text-slate-500 mb-1">Monthly Tuition Fee ($)</label>
+                  <label className="block text-[10px] font-semibold text-slate-500 mb-1">Monthly Tuition Fee ($)</label>
                   <input
-                    type="number" required
+                    type="number" required min="0"
                     value={studentForm.fee}
                     onChange={(e) => setStudentForm({ ...studentForm, fee: Number(e.target.value) })}
-                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:border-black focus:outline-none text-xs font-semibold"
+                    className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl focus:border-black focus:outline-none text-xs font-semibold"
                   />
                 </div>
               </div>
 
-              <div className="flex justify-end gap-2 border-t border-slate-100 pt-4">
-                <button type="button" onClick={() => { setActiveModal(null); setSelectedStudent(null); }} className="px-4 py-2 text-slate-500 hover:bg-slate-100 rounded-xl transition-all font-semibold cursor-pointer">Cancel</button>
-                <button type="submit" className="bg-black hover:bg-slate-800 text-white font-bold px-4 py-2 rounded-xl transition-all shadow-sm cursor-pointer">
-                  {selectedStudent ? 'Xaqiiji Bedelaada (Save Changes)' : 'Register Student'}
+              <div className="flex justify-end gap-2 border-t border-slate-100 pt-3">
+                <button type="button" onClick={() => { setActiveModal(null); setSelectedStudent(null); }} className="px-3.5 py-1.5 text-slate-500 hover:bg-slate-100 rounded-xl transition-all font-semibold cursor-pointer text-xs">Cancel</button>
+                <button type="submit" className="bg-black hover:bg-slate-800 text-white font-bold px-3.5 py-1.5 rounded-xl transition-all shadow-sm cursor-pointer text-xs">
+                  {selectedStudent ? 'Save Changes' : 'Register Student'}
                 </button>
               </div>
             </form>
@@ -6056,7 +6598,6 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
         </div>
       )}
 
-      {/* Modal - Bulk Import Student */}
       {activeModal === 'invoice' && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs">
           <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-gray-100/80 flex flex-col space-y-4">
@@ -6086,7 +6627,7 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                 {bulkSubjectId && (
                   <div className="grid grid-cols-2 gap-3 bg-white p-3 rounded-xl border border-slate-100">
                     <div>
-                      <span className="block text-[9px] font-bold text-slate-400 uppercase">Qolka (Room)</span>
+                      <span className="block text-[9px] font-bold text-slate-400 uppercase">{t('common.room')}</span>
                       <span className="text-[11px] font-semibold text-slate-800">
                         {(() => {
                           const sub = orgSubjects.find(s => s.id === bulkSubjectId);
@@ -6095,7 +6636,7 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                       </span>
                     </div>
                     <div>
-                      <span className="block text-[9px] font-bold text-slate-400 uppercase">Wakhtiga (Schedule)</span>
+                      <span className="block text-[9px] font-bold text-slate-400 uppercase">Schedule</span>
                       <span className="text-[11px] font-semibold text-slate-800">
                         {(() => {
                           const sub = orgSubjects.find(s => s.id === bulkSubjectId);
@@ -6189,7 +6730,7 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
             <form onSubmit={handleAddTeacherSubmit} className="space-y-4 text-xs">
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-[11px] font-semibold text-slate-500 mb-1">Full Name</label>
+                  <label className="block text-[11px] font-semibold text-slate-500 mb-1">{t('settings.fullName')}</label>
                   <input
                     type="text" required
                     value={teacherForm.fullName}
@@ -6214,14 +6755,14 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                   <input
                     type="text" required
                     value={teacherForm.phone}
-                    onChange={(e) => setTeacherForm({ ...teacherForm, phone: e.target.value })}
+                    onChange={(e) => setTeacherForm({ ...teacherForm, phone: e.target.value.replace(/[^0-9+ ]/g, '') })}
                     className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:border-black focus:outline-none"
                   />
                 </div>
                 <div>
                   <label className="block text-[11px] font-semibold text-slate-500 mb-1">Monthly Salary ($)</label>
                   <input
-                    type="number" required
+                    type="number" required min="0"
                     value={teacherForm.salary}
                     onChange={(e) => setTeacherForm({ ...teacherForm, salary: Number(e.target.value) })}
                     className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:border-black focus:outline-none"
@@ -6241,7 +6782,7 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
               </div>
 
               <div>
-                <label className="block text-[11px] font-semibold text-slate-500 mb-1">Password (Ereyga Sirta ah ee Dashboard-ka)</label>
+                <label className="block text-[11px] font-semibold text-slate-500 mb-1">Password</label>
                 <input
                   type="text" required
                   placeholder="Tusaale: 123456"
@@ -6251,70 +6792,96 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                 />
               </div>
 
-              {/* Multi-select Subjects Checkboxes */}
-              <div className="space-y-1.5">
-                <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider">Maddooyinka uu dhigo (Subjects) *Waajib ah</label>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 bg-slate-50 p-3 rounded-2xl border border-slate-200/60 max-h-40 overflow-y-auto">
-                  {orgSubjects.length === 0 ? (
-                    <p className="text-slate-400 text-xs col-span-2">Fadlan marka hore sameey maddooyin (No subjects created yet).</p>
-                  ) : (
-                    (() => {
-                      const availableSubjects = orgSubjects.filter(sub => {
-                        const isChecked = teacherForm.subjects.includes(sub.id);
-                        if (isChecked) return true;
+              {/* Multi-select Subjects Checkboxes or Single Room Select */}
+              {!isQuranSchool ? (
+                <div className="space-y-1.5">
+                  <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider">Maddooyinka uu dhigo (Subjects) *Waajib ah</label>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 bg-slate-50 p-3 rounded-2xl border border-slate-200/60 max-h-40 overflow-y-auto">
+                    {orgSubjects.length === 0 ? (
+                      <p className="text-slate-400 text-xs col-span-2">Fadlan marka hore sameey maddooyin (No subjects created yet).</p>
+                    ) : (
+                      (() => {
+                        const availableSubjects = orgSubjects.filter(sub => {
+                          const isChecked = teacherForm.subjects.includes(sub.id);
+                          if (isChecked) return true;
 
-                        // Check if claimed by another teacher's subjects array
-                        const isClaimedByAnotherTeacher = orgTeachers.some(t => 
-                          (!selectedTeacher || t.id !== selectedTeacher.id) && 
-                          t.subjects && 
-                          t.subjects.includes(sub.id)
-                        );
+                          // Check if claimed by another teacher's subjects array
+                          const isClaimedByAnotherTeacher = orgTeachers.some(t => 
+                            (!selectedTeacher || t.id !== selectedTeacher.id) && 
+                            t.subjects && 
+                            t.subjects.includes(sub.id)
+                          );
 
-                        // Check if subject's teacherId is set to another teacher
-                        const isTeacherIdSetToAnother = sub.teacherId && 
-                          (!selectedTeacher || sub.teacherId !== selectedTeacher.id);
+                          // Check if subject's teacherId is set to another teacher
+                          const isTeacherIdSetToAnother = sub.teacherId && 
+                            (!selectedTeacher || sub.teacherId !== selectedTeacher.id);
 
-                        return !isClaimedByAnotherTeacher && !isTeacherIdSetToAnother;
-                      });
+                          return !isClaimedByAnotherTeacher && !isTeacherIdSetToAnother;
+                        });
 
-                      if (availableSubjects.length === 0) {
-                        return <p className="text-slate-400 text-xs col-span-2">Maaddo banaan oo la dooran karo ma jirto (No available subjects found or all are assigned to other teachers).</p>;
-                      }
+                        if (availableSubjects.length === 0) {
+                          return <p className="text-slate-400 text-xs col-span-2">Maaddo banaan oo la dooran karo ma jirto (No available subjects found or all are assigned to other teachers).</p>;
+                        }
 
-                      return availableSubjects.map(sub => {
-                        const isChecked = teacherForm.subjects.includes(sub.id);
-                        
-                        return (
-                          <label key={sub.id} className={`flex items-start gap-2 p-2 rounded-xl border transition-all cursor-pointer ${
-                            isChecked ? 'border-black bg-black/5' : 'border-slate-100 hover:border-slate-300 bg-white'
-                          }`}>
-                            <input
-                              type="checkbox"
-                              checked={isChecked}
-                              onChange={(e) => {
-                                let updated = [...teacherForm.subjects];
-                                if (e.target.checked) {
-                                  updated.push(sub.id);
-                                } else {
-                                  updated = updated.filter(id => id !== sub.id);
-                                }
-                                setTeacherForm({ ...teacherForm, subjects: updated });
-                              }}
-                              className="mt-0.5 rounded border-slate-300 text-black focus:ring-black"
-                            />
-                            <div>
-                              <span className="font-semibold text-slate-800 block leading-tight">{sub.name}</span>
-                              <span className="text-[10px] text-slate-400 font-mono">
-                                Maaddada Asaasiga ah (Core Subject)
-                              </span>
-                            </div>
-                          </label>
-                        );
-                      });
-                    })()
-                  )}
+                        return availableSubjects.map(sub => {
+                          const isChecked = teacherForm.subjects.includes(sub.id);
+                          
+                          return (
+                            <label key={sub.id} className={`flex items-start gap-2 p-2 rounded-xl border transition-all cursor-pointer ${
+                              isChecked ? 'border-black bg-black/5' : 'border-slate-100 hover:border-slate-300 bg-white'
+                            }`}>
+                              <input
+                                type="checkbox"
+                                checked={isChecked}
+                                onChange={(e) => {
+                                  let updated = [...teacherForm.subjects];
+                                  if (e.target.checked) {
+                                    updated.push(sub.id);
+                                  } else {
+                                    updated = updated.filter(id => id !== sub.id);
+                                  }
+                                  setTeacherForm({ ...teacherForm, subjects: updated });
+                                }}
+                                className="mt-0.5 rounded border-slate-300 text-black focus:ring-black"
+                              />
+                              <div>
+                                <span className="font-semibold text-slate-800 block leading-tight">{sub.name}</span>
+                                <span className="text-[10px] text-slate-400 font-mono">
+                                  Maaddada Asaasiga ah (Core Subject)
+                                </span>
+                              </div>
+                            </label>
+                          );
+                        });
+                      })()
+                    )}
+                  </div>
                 </div>
-              </div>
+              ) : (
+                <div className="space-y-1.5">
+                  <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider">Qolka Macallinka (Room) *Waajib ah</label>
+                  <select 
+                    required
+                    value={teacherForm.rooms[0] || ''}
+                    onChange={(e) => setTeacherForm({ ...teacherForm, rooms: [e.target.value] })}
+                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:border-black focus:outline-none"
+                  >
+                    <option value="">-- Dooro Qolka --</option>
+                    {orgRooms.map(r => {
+                      const isClaimedByAnotherTeacher = orgTeachers.some(t => 
+                        (!selectedTeacher || t.id !== selectedTeacher.id) && 
+                        t.rooms && t.rooms.includes(r.id)
+                      );
+                      
+                      return (
+                        <option key={r.id} value={r.id} disabled={isClaimedByAnotherTeacher}>
+                          {r.roomNumber} (Qaada: {r.capacity}) {isClaimedByAnotherTeacher ? ' - Horey ayaa loo qaatay' : ''}
+                        </option>
+                      );
+                    })}
+                  </select>
+                </div>
+              )}
 
               <div className="flex justify-end gap-2 border-t border-slate-100 pt-4">
                 <button type="button" onClick={() => { setActiveModal(null); setSelectedTeacher(null); setFormError(null); }} className="px-4 py-2 text-slate-500 hover:bg-slate-100 rounded-xl transition-all font-semibold cursor-pointer">Cancel</button>
@@ -6342,13 +6909,13 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
               <div className="flex items-start gap-2.5 bg-blue-50 border border-blue-100 rounded-xl p-3">
                 <div className="w-5 h-5 rounded-full bg-blue-500 text-white flex items-center justify-center shrink-0 mt-0.5 text-[10px] font-bold">i</div>
                 <div>
-                  <p className="font-bold text-blue-800 text-[11px]">Maaddada (Subject) waa Koodh kaliya</p>
+                  <p className="font-bold text-blue-800 text-[11px]">Subject is a code only</p>
                   <p className="text-blue-600 text-[10px] mt-0.5">Waqtiga, Qolka, iyo Macallinka waxaad ku xiri doontaa markii aad abuureysid <strong>Class Session</strong>.</p>
                 </div>
               </div>
 
               <div>
-                <label className="block text-[11px] font-semibold text-slate-500 mb-1">Magaca Maaddada (Subject Name) *</label>
+                <label className="block text-[11px] font-semibold text-slate-500 mb-1">Subject Name *</label>
                 <input
                   type="text" required
                   placeholder="Tusaale: English Language, Mathematics, Quran..."
@@ -6733,14 +7300,14 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                 <div>
                   <label className="block text-[11px] font-semibold text-slate-500 mb-1">Seating Capacity</label>
                   <input
-                    type="number" required
+                    type="number" required min="1"
                     value={roomForm.capacity}
                     onChange={(e) => setRoomForm({ ...roomForm, capacity: Number(e.target.value) })}
                     className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:border-black focus:outline-none"
                   />
                 </div>
                 <div>
-                  <label className="block text-[11px] font-semibold text-slate-500 mb-1">Status</label>
+                  <label className="block text-[11px] font-semibold text-slate-500 mb-1">{t('common.status')}</label>
                   <select
                     value={roomForm.status}
                     onChange={(e: any) => setRoomForm({ ...roomForm, status: e.target.value })}
@@ -6768,7 +7335,7 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
       {activeModal === 'addExam' && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs">
           <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-gray-100/80 flex flex-col space-y-4">
-            <h3 className="text-base font-bold text-slate-900 border-b border-slate-100 pb-3">Plan New Exam</h3>
+            <h3 className="text-base font-bold text-slate-900 border-b border-slate-100 pb-3">Plan {t('exams.newExam')}</h3>
             <form onSubmit={handleAddExamSubmit} className="space-y-4 text-xs">
               <div>
                 <label className="block text-[11px] font-semibold text-slate-500 mb-1">Exam Title</label>
@@ -6941,64 +7508,155 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
         </div>
       )}
 
-      {/* Modal - Enter Marks */}
+      {/* Modal - Premium Enter Marks */}
       {activeModal === 'enterMarks' && selectedExam && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs">
-          <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-gray-100/80 flex flex-col space-y-4">
-            <h3 className="text-base font-bold text-slate-900 border-b border-slate-100 pb-3">Enter Student Marks: {selectedExam.title}</h3>
-            <div className="space-y-4 max-h-96 overflow-y-auto pr-2">
-              {orgStudents.map(student => (
-                <div key={student.id} className="flex items-center justify-between gap-4 py-1">
-                  <span className="text-xs font-semibold text-slate-800">{student.fullName}</span>
-                  <div className="flex items-center justify-end gap-2 w-full sm:w-auto">
-                    <input
-                      type="number" min="0" max="100"
-                      value={marksData[student.id] || 0}
-                      onChange={(e) => setMarksData({ ...marksData, [student.id]: Number(e.target.value) })}
-                      className="w-20 p-1.5 bg-slate-50 border border-slate-200 rounded-lg text-center font-bold text-xs focus:border-black focus:outline-none"
-                    />
-                    <span className="text-xs text-slate-400">%</span>
-                  </div>
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.95, y: 20 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            className="bg-white rounded-[2rem] w-full max-w-4xl shadow-2xl border border-slate-100 flex flex-col h-[85vh] max-h-[800px] overflow-hidden relative text-slate-900"
+          >
+            {/* Header */}
+            <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between bg-white z-10 shrink-0">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 bg-indigo-50 rounded-xl flex items-center justify-center text-indigo-600 shrink-0">
+                  <Edit2 size={24} />
                 </div>
-              ))}
-            </div>
-
-            <div className="flex justify-end gap-2 border-t border-slate-100 pt-4">
-              <button type="button" onClick={() => setActiveModal(null)} className="px-4 py-2 text-slate-500 hover:bg-slate-100 rounded-xl transition-all font-semibold cursor-pointer">Cancel</button>
-              <button
-                onClick={() => {
-                  const resultsArray = orgStudents.map(s => {
-                    const marks = marksData[s.id] || 0;
-                    let grade = 'F';
-                    if (marks >= 90) grade = 'A+';
-                    else if (marks >= 80) grade = 'A';
-                    else if (marks >= 70) grade = 'B';
-                    else if (marks >= 60) grade = 'C';
-                    else if (marks >= 50) grade = 'D';
-
-                    return {
-                      studentId: s.id,
-                      studentName: s.fullName,
-                      marks,
-                      grade
-                    };
-                  });
-                  const total = resultsArray.reduce((sum, r) => sum + r.marks, 0);
-                  const avg = resultsArray.length > 0 ? total / resultsArray.length : 0;
-                  submitMarks(selectedExam.id, resultsArray, Math.round(avg * 10) / 10);
-                  setSuccessMessage('Exam results saved and awaiting admin approval.');
-                  setActiveModal(null);
-                }}
-                className="bg-black hover:bg-slate-800 text-white font-bold px-4 py-2 rounded-xl transition-all shadow-sm cursor-pointer"
-              >
-                Submit Scores
+                <div>
+                  <h3 className="text-xl font-black text-slate-900 leading-tight">Enter Marks</h3>
+                  <p className="text-sm text-slate-500 font-medium">{selectedExam.title}</p>
+                </div>
+              </div>
+              <button onClick={() => setActiveModal(null)} className="p-2 text-slate-400 hover:bg-slate-100 rounded-full transition-colors">
+                <X size={20} />
               </button>
             </div>
-          </div>
+
+            {/* List */}
+            <div className="flex-1 overflow-y-auto bg-slate-50 p-6 scrollbar-thin">
+              {(() => {
+                const targetStudents = examTeacherSessionId
+                  ? allOrgStudents.filter(s => s.classSessions?.includes(examTeacherSessionId))
+                  : (selectedExam.type === 'school' 
+                      ? allOrgStudents 
+                      : allOrgStudents.filter(s => 
+                          (selectedExam.sessionId && s.classSessions?.includes(selectedExam.sessionId)) || 
+                          (selectedExam.subjectId && s.subjects?.includes(selectedExam.subjectId))
+                        ));
+                
+                if (targetStudents.length === 0) {
+                  return (
+                    <div className="flex flex-col items-center justify-center py-20 text-slate-400">
+                      <Users size={48} className="mb-4 opacity-50" />
+                      <p className="text-lg font-bold text-slate-500">No Students Found</p>
+                      <p className="text-sm">There are no students registered in this class.</p>
+                    </div>
+                  );
+                }
+
+                return (
+                  <div className="space-y-3 max-w-3xl mx-auto">
+                    {targetStudents.map(student => {
+                      const marks = marksData[student.id] || 0;
+                      let grade = 'F';
+                      let gColor = 'text-red-600 bg-red-50 border-red-200';
+                      if (marks >= 90) { grade = 'A+'; gColor = 'text-emerald-700 bg-emerald-50 border-emerald-200'; }
+                      else if (marks >= 80) { grade = 'A'; gColor = 'text-teal-700 bg-teal-50 border-teal-200'; }
+                      else if (marks >= 70) { grade = 'B'; gColor = 'text-blue-700 bg-blue-50 border-blue-200'; }
+                      else if (marks >= 60) { grade = 'C'; gColor = 'text-indigo-700 bg-indigo-50 border-indigo-200'; }
+                      else if (marks >= 50) { grade = 'D'; gColor = 'text-orange-700 bg-orange-50 border-orange-200'; }
+
+                      return (
+                        <div key={student.id} className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between gap-4 hover:border-indigo-300 transition-colors">
+                          <div className="flex items-center gap-4 flex-1">
+                            <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center font-bold text-slate-500 text-sm">
+                              {student.fullName.substring(0, 2).toUpperCase()}
+                            </div>
+                            <div>
+                              <h4 className="text-base font-bold text-slate-900 leading-tight">{student.fullName}</h4>
+                              <p className="text-xs font-mono text-slate-500 font-semibold">{student.studentId || student.id}</p>
+                            </div>
+                          </div>
+                          
+                          <div className="flex items-center gap-4">
+                            <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-lg border ${gColor}`}>
+                              {grade}
+                            </div>
+                            <div className="relative">
+                              <input
+                                type="number" min="0" max="100"
+                                value={marks || ''}
+                                onChange={(e) => setMarksData({ ...marksData, [student.id]: Number(e.target.value) })}
+                                className="w-24 pl-4 pr-8 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-lg font-black text-center focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 transition-all text-slate-800"
+                                placeholder="0"
+                              />
+                              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold">%</span>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
+            </div>
+
+            {/* Footer */}
+            <div className="p-6 border-t border-slate-100 bg-white shrink-0 flex items-center justify-between">
+              <div className="text-sm font-semibold text-slate-500">
+                {(() => {
+                  const values = Object.values(marksData) as number[];
+                  const avg = values.length ? Math.round(values.reduce((a, b) => a + b, 0) / values.length) : 0;
+                  return <span>Class Average: <strong className="text-indigo-600 text-lg">{avg}%</strong></span>;
+                })()}
+              </div>
+              <div className="flex items-center gap-3">
+                <button type="button" onClick={() => setActiveModal(null)} className="px-6 py-2.5 text-slate-600 hover:bg-slate-100 rounded-xl font-bold transition-all cursor-pointer">
+                  Cancel
+                </button>
+                <button
+                  onClick={() => {
+                    const targetStudents = examTeacherSessionId
+                      ? allOrgStudents.filter(s => s.classSessions?.includes(examTeacherSessionId))
+                      : (selectedExam.type === 'school' 
+                          ? allOrgStudents 
+                          : allOrgStudents.filter(s => 
+                              (selectedExam.sessionId && s.classSessions?.includes(selectedExam.sessionId)) || 
+                              (selectedExam.subjectId && s.subjects?.includes(selectedExam.subjectId))
+                            ));
+
+                    const resultsArray = targetStudents.map(s => {
+                      const marks = marksData[s.id] || 0;
+                      let grade = 'F';
+                      if (marks >= 90) grade = 'A+';
+                      else if (marks >= 80) grade = 'A';
+                      else if (marks >= 70) grade = 'B';
+                      else if (marks >= 60) grade = 'C';
+                      else if (marks >= 50) grade = 'D';
+
+                      return {
+                        studentId: s.id,
+                        studentName: s.fullName,
+                        marks,
+                        grade
+                      };
+                    });
+                    const total = resultsArray.reduce((sum, r) => sum + r.marks, 0);
+                    const avg = resultsArray.length > 0 ? total / resultsArray.length : 0;
+                    submitMarks(selectedExam.id, resultsArray, Math.round(avg * 10) / 10);
+                    setSuccessMessage('Exam results saved and awaiting admin approval.');
+                    setActiveModal(null);
+                  }}
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-8 py-2.5 rounded-xl transition-all shadow-md hover:shadow-lg cursor-pointer"
+                >
+                  Submit Scores
+                </button>
+              </div>
+            </div>
+          </motion.div>
         </div>
       )}
 
-      {/* Wadaag Links Modal */}
       <AnimatePresence>
         {sharingExam && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
@@ -7187,6 +7845,14 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
           </div>
         )}
       </AnimatePresence>
+
+      <input 
+        type="file" 
+        ref={marksFileInputRef}
+        accept=".xlsx, .xls, .csv" 
+        className="hidden" 
+        onChange={handleExcelMarksUpload} 
+      />
     </div>
   );
 }
