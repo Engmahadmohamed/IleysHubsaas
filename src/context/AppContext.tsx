@@ -1,4 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { queryClient } from '../lib/queryClient';
 import { 
   UserProfile, Organization, Student, Teacher, Subject, Room, 
   AttendanceRecord, FeeRecord, SalaryRecord, Exam, ExamResultRecord, ClassSession,
@@ -180,19 +182,146 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, [currentOrg]);
 
-  // States for Database Collections
-  const [organizations, setOrganizations] = useState<Organization[]>([]);
-  const [users, setUsers] = useState<UserProfile[]>([]);
-  const [students, setStudents] = useState<Student[]>([]);
-  const [teachers, setTeachers] = useState<Teacher[]>([]);
-  const [subjects, setSubjects] = useState<Subject[]>([]);
-  const [rooms, setRooms] = useState<Room[]>([]);
-  const [classSessions, setClassSessions] = useState<ClassSession[]>([]);
-  const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>([]);
-  const [feeRecords, setFeeRecords] = useState<FeeRecord[]>([]);
-  const [salaryRecords, setSalaryRecords] = useState<SalaryRecord[]>([]);
-  const [exams, setExams] = useState<Exam[]>([]);
-  const [examResults, setExamResults] = useState<ExamResultRecord[]>([]);
+  // React Query for Database Collections
+  const isSuper = currentUser?.role === 'superadmin';
+  const orgId = currentOrg?.id || '';
+  const isEnabled = !!db && !!currentUser && (isSuper || !!orgId);
+
+  const { data: organizations = [] } = useQuery({
+    queryKey: ['organizations', isSuper ? 'all' : orgId],
+    queryFn: async () => {
+      if (isSuper) {
+        const snap = await getDocs(collection(db, 'organizations'));
+        return snap.docs.map(doc => ({ ...doc.data(), id: doc.id } as Organization));
+      } else {
+        const snap = await getDoc(doc(db, 'organizations', orgId));
+        return snap.exists() ? [{ ...snap.data(), id: snap.id } as Organization] : [];
+      }
+    },
+    enabled: !!db && !!currentUser,
+    staleTime: 15 * 60 * 1000,
+  });
+
+  const { data: users = [] } = useQuery({
+    queryKey: ['users', isSuper ? 'all' : orgId],
+    queryFn: async () => {
+      const q = isSuper ? collection(db, 'users') : query(collection(db, 'users'), where('organizationId', '==', orgId));
+      const snap = await getDocs(q);
+      return snap.docs.map(doc => ({ ...doc.data(), uid: doc.id } as UserProfile));
+    },
+    enabled: isEnabled,
+    staleTime: 15 * 60 * 1000,
+  });
+
+  const { data: students = [] } = useQuery({
+    queryKey: ['students', isSuper ? 'all' : orgId],
+    queryFn: async () => {
+      const ref = isSuper ? collectionGroup(db, 'students') : collection(db, 'organizations', orgId, 'students');
+      const snap = await getDocs(ref);
+      return snap.docs.map(doc => ({ ...doc.data(), id: doc.id } as Student));
+    },
+    enabled: isEnabled,
+    staleTime: 2 * 1000,
+  });
+
+  const { data: teachers = [] } = useQuery({
+    queryKey: ['teachers', isSuper ? 'all' : orgId],
+    queryFn: async () => {
+      const ref = isSuper ? collectionGroup(db, 'teachers') : collection(db, 'organizations', orgId, 'teachers');
+      const snap = await getDocs(ref);
+      return snap.docs.map(doc => ({ ...doc.data(), id: doc.id } as Teacher));
+    },
+    enabled: isEnabled,
+    staleTime: 2 * 1000,
+  });
+
+  const { data: classSessions = [] } = useQuery({
+    queryKey: ['classSessions', isSuper ? 'all' : orgId],
+    queryFn: async () => {
+      const ref = isSuper ? collectionGroup(db, 'class_sessions') : collection(db, 'organizations', orgId, 'class_sessions');
+      const snap = await getDocs(ref);
+      return snap.docs.map(doc => ({ ...doc.data(), id: doc.id } as ClassSession));
+    },
+    enabled: isEnabled,
+    staleTime: 2 * 60 * 1000,
+  });
+
+  const { data: subjects = [] } = useQuery({
+    queryKey: ['subjects', orgId],
+    queryFn: async () => {
+      if (isSuper) return [];
+      const snap = await getDocs(collection(db, 'organizations', orgId, 'subjects'));
+      return snap.docs.map(doc => ({ ...doc.data(), id: doc.id } as Subject));
+    },
+    enabled: isEnabled && !isSuper,
+    staleTime: 15 * 60 * 1000,
+  });
+
+  const { data: rooms = [] } = useQuery({
+    queryKey: ['rooms', orgId],
+    queryFn: async () => {
+      if (isSuper) return [];
+      const snap = await getDocs(collection(db, 'organizations', orgId, 'rooms'));
+      return snap.docs.map(doc => ({ ...doc.data(), id: doc.id } as Room));
+    },
+    enabled: isEnabled && !isSuper,
+    staleTime: 15 * 60 * 1000,
+  });
+
+  const { data: attendanceRecords = [] } = useQuery({
+    queryKey: ['attendanceRecords', orgId],
+    queryFn: async () => {
+      if (isSuper) return [];
+      const snap = await getDocs(collection(db, 'organizations', orgId, 'attendance'));
+      return snap.docs.map(doc => ({ ...doc.data(), id: doc.id } as AttendanceRecord));
+    },
+    enabled: isEnabled && !isSuper,
+    staleTime: 2 * 1000,
+  });
+
+  const { data: feeRecords = [] } = useQuery({
+    queryKey: ['feeRecords', orgId],
+    queryFn: async () => {
+      if (isSuper) return [];
+      const snap = await getDocs(collection(db, 'organizations', orgId, 'fees'));
+      return snap.docs.map(doc => ({ ...doc.data(), id: doc.id } as FeeRecord));
+    },
+    enabled: isEnabled && !isSuper,
+    staleTime: 2 * 1000,
+  });
+
+  const { data: salaryRecords = [] } = useQuery({
+    queryKey: ['salaryRecords', orgId],
+    queryFn: async () => {
+      if (isSuper) return [];
+      const snap = await getDocs(collection(db, 'organizations', orgId, 'salary'));
+      return snap.docs.map(doc => ({ ...doc.data(), id: doc.id } as SalaryRecord));
+    },
+    enabled: isEnabled && !isSuper,
+    staleTime: 2 * 1000,
+  });
+
+  const { data: exams = [] } = useQuery({
+    queryKey: ['exams', orgId],
+    queryFn: async () => {
+      if (isSuper) return [];
+      const snap = await getDocs(collection(db, 'organizations', orgId, 'exam_sessions'));
+      return snap.docs.map(doc => ({ ...doc.data(), id: doc.id } as Exam));
+    },
+    enabled: isEnabled && !isSuper,
+    staleTime: 2 * 1000,
+  });
+
+  const { data: examResults = [] } = useQuery({
+    queryKey: ['examResults', orgId],
+    queryFn: async () => {
+      if (isSuper) return [];
+      const snap = await getDocs(collection(db, 'organizations', orgId, 'exam_results'));
+      return snap.docs.map(doc => ({ ...doc.data(), id: doc.id } as ExamResultRecord));
+    },
+    enabled: isEnabled && !isSuper,
+    staleTime: 2 * 1000,
+  });
 
   // 1. Listen to Authentication State changes & Load User Profile
   useEffect(() => {
@@ -353,224 +482,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // Queries are executed on-demand in searchStudentResults.
   }, [currentUser]);
 
-  // 3. Authenticated Mode: Listen to tenant-scoped collections in real-time
-  useEffect(() => {
-    if (!currentUser || !db) {
-      if (currentUser && !db) {
-        console.error("Firestore DB is not initialized. Realtime listeners skipped.");
-      }
-      return;
-    }
-
-    const orgId = currentUser.organizationId;
-    const isSuper = currentUser.role === 'superadmin';
-
-    let unsubOrgs = () => {};
-    let unsubUsers = () => {};
-    let unsubStudents = () => {};
-    let unsubTeachers = () => {};
-    let unsubSubjects = () => {};
-    let unsubRooms = () => {};
-    let unsubAttendance = () => {};
-    let unsubFees = () => {};
-    let unsubSalaries = () => {};
-    let unsubExams = () => {};
-    let unsubResults = () => {};
-    let unsubClassSessions = () => {};
-
-    if (isSuper) {
-      unsubOrgs = onSnapshot(collection(db, 'organizations'), (snap) => {
-        const list: Organization[] = [];
-        snap.forEach((doc) => {
-          list.push({ ...doc.data(), id: doc.id } as Organization);
-        });
-        setOrganizations(list);
-      }, (error) => handleFirestoreError(error, OperationType.LIST, 'organizations'));
-
-      unsubUsers = onSnapshot(collection(db, 'users'), (snap) => {
-        const list: UserProfile[] = [];
-        snap.forEach((doc) => {
-          list.push({ ...doc.data(), uid: doc.id } as UserProfile);
-        });
-        setUsers(list);
-      }, (error) => handleFirestoreError(error, OperationType.LIST, 'users'));
-
-      unsubStudents = onSnapshot(collectionGroup(db, 'students'), (snap) => {
-        const list: Student[] = [];
-        snap.forEach((doc) => {
-          list.push({ ...doc.data(), id: doc.id } as Student);
-        });
-        setStudents(list);
-      }, (error) => handleFirestoreError(error, OperationType.LIST, 'collectionGroup:students'));
-
-      unsubTeachers = onSnapshot(collectionGroup(db, 'teachers'), (snap) => {
-        const list: Teacher[] = [];
-        snap.forEach((doc) => {
-          list.push({ ...doc.data(), id: doc.id } as Teacher);
-        });
-        setTeachers(list);
-      }, (error) => handleFirestoreError(error, OperationType.LIST, 'collectionGroup:teachers'));
-
-      unsubClassSessions = onSnapshot(collectionGroup(db, 'class_sessions'), (snap) => {
-        const list: ClassSession[] = [];
-        snap.forEach((doc) => {
-          list.push({ ...doc.data(), id: doc.id } as ClassSession);
-        });
-        setClassSessions(list);
-      }, (error) => handleFirestoreError(error, OperationType.LIST, 'collectionGroup:class_sessions'));
-
-    } else {
-      unsubOrgs = onSnapshot(doc(db, 'organizations', orgId), (docSnap) => {
-        if (docSnap.exists()) {
-          const org = { ...docSnap.data(), id: docSnap.id } as Organization;
-          setOrganizations([org]);
-          setCurrentOrg(org);
-        }
-      }, (error) => handleFirestoreError(error, OperationType.GET, `organizations/${orgId}`));
-
-      unsubUsers = onSnapshot(query(collection(db, 'users'), where('organizationId', '==', orgId)), (snap) => {
-        const list: UserProfile[] = [];
-        snap.forEach((doc) => {
-          list.push({ ...doc.data(), uid: doc.id } as UserProfile);
-        });
-        setUsers(list);
-      }, (error) => handleFirestoreError(error, OperationType.LIST, 'users'));
-
-      unsubStudents = onSnapshot(collection(db, 'organizations', orgId, 'students'), (snap) => {
-        const list: Student[] = [];
-        snap.forEach((doc) => {
-          list.push({ ...doc.data(), id: doc.id } as Student);
-        });
-        setStudents(list);
-      }, (error) => handleFirestoreError(error, OperationType.LIST, `organizations/${orgId}/students`));
-
-      unsubTeachers = onSnapshot(collection(db, 'organizations', orgId, 'teachers'), (snap) => {
-        const list: Teacher[] = [];
-        snap.forEach((doc) => {
-          list.push({ ...doc.data(), id: doc.id } as Teacher);
-        });
-        setTeachers(list);
-      }, (error) => handleFirestoreError(error, OperationType.LIST, `organizations/${orgId}/teachers`));
-
-      unsubSubjects = onSnapshot(collection(db, 'organizations', orgId, 'subjects'), (snap) => {
-        const list: Subject[] = [];
-        snap.forEach((doc) => {
-          list.push({ ...doc.data(), id: doc.id } as Subject);
-        });
-        setSubjects(list);
-      }, (error) => handleFirestoreError(error, OperationType.LIST, `organizations/${orgId}/subjects`));
-
-      unsubRooms = onSnapshot(collection(db, 'organizations', orgId, 'rooms'), (snap) => {
-        const list: Room[] = [];
-        snap.forEach((doc) => {
-          list.push({ ...doc.data(), id: doc.id } as Room);
-        });
-        setRooms(list);
-      }, (error) => handleFirestoreError(error, OperationType.LIST, `organizations/${orgId}/rooms`));
-
-      if (currentUser.role === 'teacher') {
-        if (currentUser.teacherId) {
-          unsubAttendance = onSnapshot(
-            query(collection(db, 'organizations', orgId, 'attendance'), where('teacherId', '==', currentUser.teacherId)),
-            (snap) => {
-              const list: AttendanceRecord[] = [];
-              snap.forEach((doc) => {
-                list.push({ ...doc.data(), id: doc.id } as AttendanceRecord);
-              });
-              setAttendanceRecords(list);
-            },
-            (error) => handleFirestoreError(error, OperationType.LIST, `organizations/${orgId}/attendance`)
-          );
-        }
-      } else {
-        unsubAttendance = onSnapshot(collection(db, 'organizations', orgId, 'attendance'), (snap) => {
-          const list: AttendanceRecord[] = [];
-          snap.forEach((doc) => {
-            list.push({ ...doc.data(), id: doc.id } as AttendanceRecord);
-          });
-          setAttendanceRecords(list);
-        }, (error) => handleFirestoreError(error, OperationType.LIST, `organizations/${orgId}/attendance`));
-      }
-
-      // 1. Fee records (all roles except teacher have access)
-      if (currentUser.role !== 'teacher') {
-        unsubFees = onSnapshot(collection(db, 'organizations', orgId, 'fees'), (snap) => {
-          const list: FeeRecord[] = [];
-          snap.forEach((doc) => {
-            list.push({ ...doc.data(), id: doc.id } as FeeRecord);
-          });
-          setFeeRecords(list);
-        }, (error) => handleFirestoreError(error, OperationType.LIST, `organizations/${orgId}/fees`));
-      } else {
-        setFeeRecords([]);
-      }
-
-      // 2. Salary records
-      if (currentUser.role !== 'teacher' && currentUser.role !== 'schoolstaff') {
-        unsubSalaries = onSnapshot(collection(db, 'organizations', orgId, 'salary'), (snap) => {
-          const list: SalaryRecord[] = [];
-          snap.forEach((doc) => {
-            list.push({ ...doc.data(), id: doc.id } as SalaryRecord);
-          });
-          setSalaryRecords(list);
-        }, (error) => handleFirestoreError(error, OperationType.LIST, `organizations/${orgId}/salary`));
-      } else if (currentUser.role === 'teacher' && currentUser.teacherId) {
-        unsubSalaries = onSnapshot(
-          query(collection(db, 'organizations', orgId, 'salary'), where('teacherId', '==', currentUser.teacherId)),
-          (snap) => {
-            const list: SalaryRecord[] = [];
-            snap.forEach((doc) => {
-              list.push({ ...doc.data(), id: doc.id } as SalaryRecord);
-            });
-            setSalaryRecords(list);
-          },
-          (error) => handleFirestoreError(error, OperationType.LIST, `organizations/${orgId}/salary`)
-        );
-      } else {
-        setSalaryRecords([]);
-      }
-
-      unsubExams = onSnapshot(collection(db, 'organizations', orgId, 'exam_sessions'), (snap) => {
-        const list: Exam[] = [];
-        snap.forEach((doc) => {
-          list.push({ ...doc.data(), id: doc.id } as Exam);
-        });
-        setExams(list);
-      }, (error) => handleFirestoreError(error, OperationType.LIST, `organizations/${orgId}/exam_sessions`));
-
-      unsubResults = onSnapshot(collection(db, 'organizations', orgId, 'exam_results'), (snap) => {
-        const list: ExamResultRecord[] = [];
-        snap.forEach((doc) => {
-          list.push({ ...doc.data(), id: doc.id } as ExamResultRecord);
-        });
-        setExamResults(list);
-      }, (error) => handleFirestoreError(error, OperationType.LIST, `organizations/${orgId}/exam_results`));
-
-      unsubClassSessions = onSnapshot(collection(db, 'organizations', orgId, 'class_sessions'), (snap) => {
-        const list: ClassSession[] = [];
-        snap.forEach((doc) => {
-          list.push({ ...doc.data(), id: doc.id } as ClassSession);
-        });
-        setClassSessions(list);
-      }, (error) => handleFirestoreError(error, OperationType.LIST, `organizations/${orgId}/class_sessions`));
-    }
-
-    return () => {
-      unsubOrgs();
-      unsubUsers();
-      unsubStudents();
-      unsubTeachers();
-      unsubSubjects();
-      unsubRooms();
-      unsubClassSessions();
-      unsubAttendance();
-      unsubFees();
-      unsubSalaries();
-      unsubExams();
-      unsubResults();
-    };
-  }, [currentUser]);
-
+  
   // Persistent changes helper function
   const saveStateToLocalStorage = (key: string, data: any) => {
     safeStorage.setItem(key, JSON.stringify(data));
@@ -669,12 +581,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           return superUser;
         }
 
-        // No registered Firestore profile found, and not superadmin: reject login.
+        // No registered Firestore profile found — user was deleted or never registered.
+        // Wipe all caches so they cannot access any offline-persisted data.
+        queryClient.clear();
         await signOut(auth);
         setCurrentUser(null);
         setCurrentOrg(null);
         setLoading(false);
-        const errMsg = 'Akaount-kani kama diiwaan gashan IleysHub. Fadlan la xiriir maamulaha.';
+        const errMsg = 'Xisaabtani la tirtiray ama kama diiwaan gashan IleysHub. Fadlan la xiriir maamulaha.';
         setError(errMsg);
         throw new Error(errMsg);
       }
@@ -785,10 +699,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (db) {
         await setDoc(doc(db, 'users', uid), updates, { merge: true });
         console.log('Successfully updated user profile in Firestore:', uid);
-      } else {
-        // Fallback for local memory storage (users list update)
-        setUsers(prev => prev.map(u => u.uid === uid ? { ...u, ...updates } : u));
       }
+      queryClient.invalidateQueries({ queryKey: ['users'] });
     } catch (err: any) {
       console.error('Failed to update user profile:', err);
       throw new Error(err.message || 'Ku guuldareystay bedelaada xogta.');
@@ -802,11 +714,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     try {
       if (db) {
         await deleteDoc(doc(db, 'users', uid));
-        setUsers(prev => prev.filter(u => u.uid !== uid));
         console.log('Successfully deleted staff member:', uid);
-      } else {
-        setUsers(prev => prev.filter(u => u.uid !== uid));
       }
+      queryClient.invalidateQueries({ queryKey: ['users'] });
     } catch (err: any) {
       console.error('Failed to delete staff member:', err);
       throw new Error(err.message || 'Ku guuldareystay tirtirida staff-ka.');
@@ -870,8 +780,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const deleteOrganization = async (id: string) => {
     try {
+      // 1. Delete the organization document
       await deleteDoc(doc(db, 'organizations', id));
-      console.log('Successfully deleted organization from Firestore:', id);
+      
+      // 2. Delete all users belonging to this organization
+      const usersQuery = query(collection(db, 'users'), where('organizationId', '==', id));
+      const usersSnap = await getDocs(usersQuery);
+      const deletePromises = usersSnap.docs.map(userDoc => deleteDoc(doc(db, 'users', userDoc.id)));
+      await Promise.all(deletePromises);
+      
+      // 3. Fully wipe ALL cached data so deleted org users can never load from cache
+      queryClient.clear();
+
+      console.log('Successfully deleted organization and its users from Firestore:', id);
     } catch (err) {
       console.error('Failed to delete organization from Firestore:', err);
     }
@@ -933,6 +854,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     try {
       await setDoc(doc(db, 'organizations', orgId, 'students', id), newStudent);
+      queryClient.invalidateQueries({ queryKey: ['students', orgId] });
       await setDoc(doc(db, 'organizations', orgId, 'fees', feeId), newFee);
       console.log('Successfully saved student and fee record to Firestore:', studentId);
     } catch (err) {
@@ -957,6 +879,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!orgId) return;
     try {
       await deleteDoc(doc(db, 'organizations', orgId, 'students', id));
+      queryClient.invalidateQueries({ queryKey: ['students', orgId] });
       console.log('Successfully deleted student from Firestore');
     } catch (err) {
       console.error('Firestore student delete error:', err);
@@ -1045,6 +968,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     try {
       await setDoc(doc(db, 'organizations', orgId, 'teachers', id), newTeacher);
+      queryClient.invalidateQueries({ queryKey: ['teachers', orgId] });
       await setDoc(doc(db, 'organizations', orgId, 'salary', salaryId), newSalary);
 
       // Now sync subjects!
@@ -1111,8 +1035,32 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const orgId = currentUser?.organizationId;
     if (!orgId) return;
     try {
-      await deleteDoc(doc(db, 'organizations', orgId, 'teachers', id));
-      console.log('Successfully deleted teacher from Firestore');
+      // First fetch teacher to get email before deletion
+      const teacherRef = doc(db, 'organizations', orgId, 'teachers', id);
+      const teacherSnap = await getDoc(teacherRef);
+      let teacherEmail = '';
+      if (teacherSnap.exists()) {
+        teacherEmail = teacherSnap.data().email;
+      }
+      
+      await deleteDoc(teacherRef);
+      
+      if (teacherEmail) {
+        // Query users collection to delete the teacher's auth profile
+        const usersQuery = query(collection(db, 'users'), where('email', '==', teacherEmail), where('organizationId', '==', orgId));
+        const usersSnap = await getDocs(usersQuery);
+        const deletePromises = usersSnap.docs.map(userDoc => deleteDoc(doc(db, 'users', userDoc.id)));
+        await Promise.all(deletePromises);
+      }
+
+      // Fully wipe all React Query cache entries for teachers and users
+      // so the deleted user cannot load data from offline persistence cache
+      queryClient.removeQueries({ queryKey: ['teachers', orgId] });
+      queryClient.removeQueries({ queryKey: ['users'] });
+      queryClient.invalidateQueries({ queryKey: ['teachers', orgId] });
+      queryClient.invalidateQueries({ queryKey: ['users'] });
+
+      console.log('Successfully deleted teacher and their user account from Firestore');
     } catch (err) {
       console.error('Firestore teacher delete error:', err);
     }
@@ -1338,6 +1286,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const newRoom: Room = { ...roomData, id };
     try {
       await setDoc(doc(db, 'organizations', orgId, 'rooms', id), newRoom);
+      queryClient.invalidateQueries({ queryKey: ['rooms', orgId] });
       console.log('Successfully added room to Firestore');
     } catch (err) {
       console.error('Firestore room save error:', err);
@@ -1360,6 +1309,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!orgId) return;
     try {
       await deleteDoc(doc(db, 'organizations', orgId, 'rooms', id));
+      queryClient.invalidateQueries({ queryKey: ['rooms', orgId] });
       console.log('Successfully deleted room from Firestore');
     } catch (err) {
       console.error('Firestore room delete error:', err);
@@ -1488,6 +1438,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
     try {
       await setDoc(doc(db, 'organizations', orgId, 'exam_sessions', id), newExam);
+      queryClient.invalidateQueries({ queryKey: ['exams', orgId] });
       console.log('Successfully created exam in Firestore');
     } catch (err) {
       console.error('Firestore exam save error:', err);
@@ -1588,6 +1539,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const orgId = exam.organizationId;
     try {
       await deleteDoc(doc(db, 'organizations', orgId, 'exam_sessions', id));
+      queryClient.invalidateQueries({ queryKey: ['exams', orgId] });
       const resultRecord = examResults.find(r => r.examId === id);
       if (resultRecord) {
         await deleteDoc(doc(db, 'organizations', orgId, 'exam_results', resultRecord.id));

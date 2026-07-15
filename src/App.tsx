@@ -440,12 +440,7 @@ function RoutesContainer({ currentUser }: { currentUser: any }) {
               <Database size={15} className="text-white" />
               <span className="font-bold">Student Fee Checking Access</span>
             </div>
-            <Link 
-              to="/"
-              className="bg-black/50 hover:bg-black/70 text-white font-semibold px-3 py-1 rounded-lg text-xs cursor-pointer border border-emerald-700/50"
-            >
-              ← Back to System Login
-            </Link>
+
           </div>
           <FeeCheckingPortal />
         </div>
