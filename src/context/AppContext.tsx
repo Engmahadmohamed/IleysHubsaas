@@ -268,27 +268,39 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     staleTime: 15 * 60 * 1000,
   });
 
-  const { data: attendanceRecords = [] } = useQuery({
-    queryKey: ['attendanceRecords', orgId],
-    queryFn: async () => {
-      if (isSuper) return [];
-      const snap = await getDocs(collection(db, 'organizations', orgId, 'attendance'));
-      return snap.docs.map(doc => ({ ...doc.data(), id: doc.id } as AttendanceRecord));
-    },
-    enabled: isEnabled && !isSuper,
-    staleTime: 2 * 1000,
-  });
+  // Attendance — real-time listener (teachers submit, admin sees instantly)
+  const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>([]);
+  useEffect(() => {
+    if (!isEnabled || isSuper || !orgId) { setAttendanceRecords([]); return; }
+    const unsubAttendance = onSnapshot(
+      collection(db, 'organizations', orgId, 'attendance'),
+      (snap) => {
+        const list = snap.docs.map(d => ({ ...d.data(), id: d.id } as AttendanceRecord));
+        setAttendanceRecords(list);
+        // Also sync into React Query cache
+        queryClient.setQueryData(['attendanceRecords', orgId], list);
+      },
+      (err) => console.error('Attendance listener error:', err)
+    );
+    return () => unsubAttendance();
+  }, [isEnabled, isSuper, orgId]);
 
-  const { data: feeRecords = [] } = useQuery({
-    queryKey: ['feeRecords', orgId],
-    queryFn: async () => {
-      if (isSuper) return [];
-      const snap = await getDocs(collection(db, 'organizations', orgId, 'fees'));
-      return snap.docs.map(doc => ({ ...doc.data(), id: doc.id } as FeeRecord));
-    },
-    enabled: isEnabled && !isSuper,
-    staleTime: 2 * 1000,
-  });
+  // Fees — real-time listener (admin approves/cancels, UI updates instantly)
+  const [feeRecords, setFeeRecords] = useState<FeeRecord[]>([]);
+  useEffect(() => {
+    if (!isEnabled || isSuper || !orgId) { setFeeRecords([]); return; }
+    const unsubFees = onSnapshot(
+      collection(db, 'organizations', orgId, 'fees'),
+      (snap) => {
+        const list = snap.docs.map(d => ({ ...d.data(), id: d.id } as FeeRecord));
+        setFeeRecords(list);
+        // Also sync into React Query cache
+        queryClient.setQueryData(['feeRecords', orgId], list);
+      },
+      (err) => console.error('Fees listener error:', err)
+    );
+    return () => unsubFees();
+  }, [isEnabled, isSuper, orgId]);
 
   const { data: salaryRecords = [] } = useQuery({
     queryKey: ['salaryRecords', orgId],
@@ -1319,7 +1331,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Attendance Record Operations
   const saveAttendance = async (record: AttendanceRecord | Omit<AttendanceRecord, 'id' | 'createdAt'>) => {
     const orgId = record.organizationId;
-    // Generate deterministic ID so multiple "Done" clicks for the same session/date overwrite the record instead of creating duplicates
     const baseId = record.sessionId ? `att-${record.sessionId}-${record.date}` : `att-${Date.now()}`;
     const id = ('id' in record) ? record.id : baseId;
     const newRecord: AttendanceRecord = {
@@ -1327,6 +1338,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       id,
       createdAt: ('createdAt' in record) ? record.createdAt : new Date().toISOString()
     };
+
+    // Optimistic update — instantly update local state, no refresh needed
+    setAttendanceRecords(prev => {
+      const existing = prev.findIndex(r => r.id === id);
+      if (existing >= 0) {
+        const updated = [...prev];
+        updated[existing] = newRecord;
+        return updated;
+      }
+      return [...prev, newRecord];
+    });
+
     try {
       await setDoc(doc(db, 'organizations', orgId, 'attendance', id), newRecord, { merge: true });
       console.log('Successfully saved attendance to Firestore');
@@ -1339,6 +1362,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const approveFeePayment = async (id: string) => {
     const record = feeRecords.find(f => f.id === id);
     if (!record) return;
+
+    // Optimistic update — immediately mark as paid in UI
+    setFeeRecords(prev => prev.map(f => f.id === id ? { ...f, status: 'paid', paidAt: new Date().toISOString() } : f));
+
     try {
       await setDoc(doc(db, 'organizations', record.organizationId, 'fees', id), {
         status: 'paid',
@@ -1347,12 +1374,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       console.log('Successfully approved fee payment in Firestore');
     } catch (err) {
       console.error('Firestore fee approve error:', err);
+      // Revert on error
+      setFeeRecords(prev => prev.map(f => f.id === id ? { ...f, status: record.status } : f));
     }
   };
 
   const updateFeePaymentStatus = async (id: string, status: 'unpaid' | 'pending' | 'paid' | 'cancelled') => {
     const record = feeRecords.find(f => f.id === id);
     if (!record) return;
+
+    // Optimistic update — immediately reflect status change
+    setFeeRecords(prev => prev.map(f =>
+      f.id === id ? { ...f, status, paidAt: status === 'paid' ? new Date().toISOString() : undefined } : f
+    ));
+
     try {
       await setDoc(doc(db, 'organizations', record.organizationId, 'fees', id), {
         status,
@@ -1371,12 +1406,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           month: record.month,
           organizationId: record.organizationId
         };
+        // Optimistically add new pending fee
+        setFeeRecords(prev => [...prev, newFee]);
         await setDoc(doc(db, 'organizations', record.organizationId, 'fees', newFeeId), newFee);
       }
 
       console.log('Successfully updated fee payment status in Firestore');
     } catch (err) {
       console.error('Firestore fee status update error:', err);
+      // Revert on error
+      setFeeRecords(prev => prev.map(f => f.id === id ? { ...f, status: record.status } : f));
     }
   };
 
