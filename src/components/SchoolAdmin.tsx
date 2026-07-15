@@ -1833,8 +1833,8 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
 
       const whatsappMessage =
         `Salaam ${fee.studentName}! 🎓\n\n` +
-        `Waxaad heli kartaa risiidhkaaga rasmiga ah ee bishii *${fee.month}* halkan:\n\n` +
-        `🔗 ${verifyUrl}\n\n` +
+        `Waxaan ku wargelinaynaa in lacag bixintaadii*${fee.month}* la diiwaangeliyey:\n\n` +
+        `📄 Rasiidhkaaga ka soo degso: ${verifyUrl}\n\n` +
         `💳 Lacagta la bixiyay: *$${fee.amount}*\n` +
         `📅 Taariikhda: ${fee.paidAt ? new Date(fee.paidAt).toLocaleDateString() : new Date().toLocaleDateString()}\n\n` +
         `Mahadsanid! — ${currentOrg?.name || ''}`;
@@ -7021,7 +7021,7 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                       const msg =
                         `Salaam ${feeRecord.studentName}! 🎓\n\n` +
                         `Waxaan ku wargelinaynaa in lacag bixintaadii *${feeRecord.month}* la diiwaangeliyey.✅\n\n` +
-                        `📄 Rasiidhkaaga ka soo degso:\n${verifyUrl}\n\n` +
+                        `📄 Rasiidhkaaga ka soo degso halkaan:\n${verifyUrl}\n\n` +
                         `💳 Lacagta: *$${feeRecord.amount}*\n` +
                         `📅 Taariikhda: ${new Date().toLocaleDateString()}\n\n` +
                         `Mahadsanid! — ${currentOrg?.name || ''}`;
