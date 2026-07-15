@@ -20,6 +20,19 @@ import SubjectDetail from './SubjectDetail';
 import LanguageSwitcher from './LanguageSwitcher';
 import { useTranslation } from 'react-i18next';
 
+const formatFeeMonth = (date: Date) =>
+  date.toLocaleString('en-US', { month: 'long', year: 'numeric' });
+
+const parseFeeMonthDate = (monthStr: string): Date | null => {
+  const parsed = new Date(monthStr);
+  return isNaN(parsed.getTime()) ? null : parsed;
+};
+
+const feeMonthKey = (monthStr: string) => {
+  const parsed = parseFeeMonthDate(monthStr);
+  return parsed ? `${parsed.getFullYear()}-${parsed.getMonth()}` : monthStr.trim();
+};
+
 export default function SchoolAdmin() {
   const { t } = useTranslation();
   const { showAlert, showConfirm } = useAlert();
@@ -64,15 +77,31 @@ export default function SchoolAdmin() {
     navigate(`/portal/${newTab}`);
   };
 
-  // Redirect staff to students page if on unauthorized tabs
+  // Redirect staff away from tabs they lack permission for
   useEffect(() => {
     if (isStaff) {
-      const allowedTabs = ['students', 'subjects', 'class-sessions', 'rooms', 'attendance', 'fees', 'exams', 'settings'];
-      if (!allowedTabs.includes(activeTab)) {
-        navigate('/portal/students', { replace: true });
+      const tabPermissions: Record<string, string> = {
+        dashboard: 'Dashboard',
+        students: 'Students',
+        teachers: 'Teachers',
+        subjects: 'Subjects',
+        'class-sessions': 'Class Sessions',
+        rooms: 'Class Rooms',
+        attendance: 'Attendance',
+        fees: 'Fees',
+        salaries: 'Teacher Salary',
+        exams: 'Exams',
+        reports: 'Print Reports',
+        settings: 'School Settings',
+      };
+      const required = tabPermissions[activeTab];
+      if (required && !hasPermission(required)) {
+        const fallback = ['students', 'subjects', 'attendance', 'fees', 'exams', 'settings']
+          .find(tab => hasPermission(tabPermissions[tab]));
+        navigate(fallback ? `/portal/${fallback}` : '/portal/students', { replace: true });
       }
     }
-  }, [isStaff, activeTab, navigate]);
+  }, [isStaff, activeTab, navigate, currentUser?.permissions]);
 
   // Redirect teachers to dashboard if on unauthorized tabs
   useEffect(() => {
@@ -406,7 +435,11 @@ export default function SchoolAdmin() {
     ? allOrgExams.filter(ex => ex.type === 'school' || (ex.subjectId && teacherSubjectIds.includes(ex.subjectId)))
     : allOrgExams;
   const isFeeExpired = (fee: FeeRecord) => {
-    return false;
+    if (fee.status !== 'pending' && fee.status !== 'unpaid') return false;
+    const monthDate = parseFeeMonthDate(fee.month);
+    if (!monthDate) return false;
+    const dueDate = new Date(monthDate.getFullYear(), monthDate.getMonth(), 25, 23, 59, 59, 999);
+    return Date.now() > dueDate.getTime();
   };
 
   const validStudentIds = new Set(orgStudents.map(s => s.id));
@@ -421,20 +454,20 @@ export default function SchoolAdmin() {
     return debts;
   }, [orgFees]);
 
-  const currentMonthStr = useMemo(() => new Date().toLocaleString('default', { month: 'long', year: 'numeric' }), []);
+  const currentMonthKey = useMemo(() => feeMonthKey(formatFeeMonth(new Date())), []);
 
   const pendingFeeRecords = useMemo(() => {
     // Strictly pending: only owes for the CURRENT month (no past months)
     return Object.values(studentDebts)
-      .filter(fees => fees.every(f => f.month === currentMonthStr))
+      .filter(fees => fees.every(f => feeMonthKey(f.month) === currentMonthKey))
       .flatMap(fees => fees);
-  }, [studentDebts, currentMonthStr]);
+  }, [studentDebts, currentMonthKey]);
 
   const overdueStudentsList = useMemo(() => {
     // Overdue / Deymaha: owes for ANY past month
     return Object.values(studentDebts)
-      .filter(fees => fees.some(f => f.month !== currentMonthStr));
-  }, [studentDebts, currentMonthStr]);
+      .filter(fees => fees.some(f => feeMonthKey(f.month) !== currentMonthKey));
+  }, [studentDebts, currentMonthKey]);
 
   const orgSalaries = isTeacher ? allOrgSalaries.filter(sal => sal.teacherId === matchingTeacher?.id) : allOrgSalaries.filter(sal => orgTeachers.some(t => t.id === sal.teacherId)); // Teachers only see their own salary status, admins see all active teachers
   const orgAttendance = isTeacher
@@ -986,7 +1019,7 @@ export default function SchoolAdmin() {
     XLSX.writeFile(wb, 'student_import_template.xlsx');
   };
 
-  const handleBulkImport = () => {
+  const handleBulkImport = async () => {
     setBulkResult(null);
     if (!bulkInput.trim()) return;
 
@@ -1015,7 +1048,7 @@ export default function SchoolAdmin() {
       }
     });
 
-    const result = bulkImportStudents(importData);
+    const result = await bulkImportStudents(importData);
     setBulkResult(result);
     setBulkInput('');
     if (result.successCount > 0) {
@@ -3256,7 +3289,7 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                           <button 
                             onClick={() => {
                               setSelectedStudent(null);
-                              setStudentForm({ fullName: '', studentPhone: '', parentPhone: '', address: '', gender: 'male', dob: '', fee: 50, subjects: [], classSessions: [] });
+                              setStudentForm({ fullName: '', studentPhone: '', parentPhone: '', address: '', gender: 'male', dob: '', fee: 50, subjects: [], classSessions: [], roomId: '' });
                               setFormError(null);
                               setActiveModal('addStudent');
                             }}
@@ -3385,7 +3418,7 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                   <button 
                     onClick={() => {
                       setSelectedStudent(null);
-                      setStudentForm({ fullName: '', studentPhone: '', parentPhone: '', address: '', gender: 'male', dob: '', fee: 50, subjects: [], classSessions: [] });
+                      setStudentForm({ fullName: '', studentPhone: '', parentPhone: '', address: '', gender: 'male', dob: '', fee: 50, subjects: [], classSessions: [], roomId: '' });
                       setFormError(null);
                       setActiveModal('addStudent');
                     }}
@@ -4935,7 +4968,7 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
           )}
 
           {/* Tab 7: FEES */}
-          {activeTab === 'fees' && (
+          {activeTab === 'fees' && hasPermission('Fees') && (
             <div className="space-y-6">
               <div className="flex items-center justify-between">
                 <div>
@@ -4944,10 +4977,14 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                 </div>
                 <div className="flex items-center gap-2">
                   <button
-                    onClick={() => {
+                    onClick={async () => {
                       const link = `${window.location.origin}/check-fee/${currentOrg?.id}`;
-                      navigator.clipboard.writeText(link);
-                      alert('Linkiga hubinta lacagta waa la copy-gareeyay: ' + link);
+                      try {
+                        await navigator.clipboard.writeText(link);
+                        showAlert('Linkiga hubinta lacagta waa la copy-gareeyay!', 'success', link);
+                      } catch {
+                        showAlert('Linkiga waa la heli karaa halkan:', 'info', link);
+                      }
                     }}
                     className="flex items-center gap-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-semibold text-xs px-4 py-2.5 rounded-xl transition-all shadow-sm border border-emerald-200 cursor-pointer"
                   >
@@ -4974,7 +5011,7 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                     <div className="bg-white p-4 rounded-2xl border border-gray-100 card-shadow">
                       <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Total Collected</span>
                       <span className="text-xl lg:text-2xl font-extrabold text-green-600 block mt-1">
-                        ${orgFees.filter(f => f.status === 'paid' || f.status === 'approved').reduce((sum, f) => sum + (Number(f.amount) || 0), 0)}
+                        ${orgFees.filter(f => f.status === 'paid').reduce((sum, f) => sum + (Number(f.amount) || 0), 0)}
                       </span>
                     </div>
                     <div className="bg-white p-4 rounded-2xl border border-gray-100 card-shadow">
@@ -4988,7 +5025,7 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                 <div className="bg-white p-4 rounded-2xl border border-gray-100 card-shadow">
                   <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Paid Invoices</span>
                   <span className="text-xl lg:text-2xl font-extrabold text-slate-800 block mt-1">
-                    {orgFees.filter(f => (f.status === 'paid' || f.status === 'approved') && !studentDebts[f.studentId]).length}
+                    {orgFees.filter(f => (f.status === 'paid') && !studentDebts[f.studentId]).length}
                   </span>
                 </div>
                 <div className="bg-white p-4 rounded-2xl border border-gray-100 card-shadow">
@@ -5033,7 +5070,7 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                     }`}
                   >
                     <CheckCircle2 size={14} className={feeSubTab === 'paid' ? 'text-green-500' : ''} />
-                    <span>Paid ({orgFees.filter(f => (f.status === 'paid' || f.status === 'approved') && !studentDebts[f.studentId]).length})</span>
+                    <span>Paid ({orgFees.filter(f => (f.status === 'paid') && !studentDebts[f.studentId]).length})</span>
                   </button>
                 </div>
               </div>
@@ -5237,7 +5274,7 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                       </thead>
                       <tbody className="divide-y divide-slate-100">
                         {orgFees
-                          .filter(f => (f.status === 'paid' || f.status === 'approved') && !studentDebts[f.studentId])
+                          .filter(f => (f.status === 'paid') && !studentDebts[f.studentId])
                           .filter(f => f.studentName.toLowerCase().includes(paidSearch.toLowerCase()) || f.invoiceNumber.toLowerCase().includes(paidSearch.toLowerCase()))
                           .map(fee => (
                             <tr key={fee.id} className="hover:bg-slate-50/40">
@@ -5279,7 +5316,7 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                               </td>
                             </tr>
                           ))}
-                        {orgFees.filter(f => (f.status === 'paid' || f.status === 'approved') && !studentDebts[f.studentId]).length === 0 && (
+                        {orgFees.filter(f => (f.status === 'paid') && !studentDebts[f.studentId]).length === 0 && (
                           <tr>
                             <td colSpan={5} className="p-8 text-center text-slate-400 text-xs font-medium">
                               Weli ma jiro wax lacag ah oo la bixiyay bishan.

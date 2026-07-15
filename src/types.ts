@@ -178,4 +178,24 @@ export interface ExamResultRecord {
   createdAt: string;
 }
 
+export interface StudentExamSearchResultItem {
+  examTitle: string;
+  subjectName: string;
+  marks: number;
+  grade: string;
+  average: number;
+}
+
+export interface StudentSearchResult {
+  student: Student;
+  results: StudentExamSearchResultItem[];
+  subjects: Subject[];
+  orgName?: string;
+}
+
+export interface StudentFeeSearchResult {
+  student: Student;
+  fees: FeeRecord[];
+}
+
 

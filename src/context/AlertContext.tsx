@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, ReactNode, useCallback } from 'react';
-import { AlertCircle, CheckCircle2, Info, X, HelpCircle } from 'lucide-react';
+import { AlertCircle, CheckCircle2, Info, X, HelpCircle, Sparkles } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 type AlertType = 'success' | 'error' | 'info';
@@ -7,6 +7,7 @@ type AlertType = 'success' | 'error' | 'info';
 interface Alert {
   id: string;
   message: string;
+  detail?: string;
   type: AlertType;
 }
 
@@ -18,28 +19,49 @@ interface ConfirmState {
 }
 
 interface AlertContextType {
-  showAlert: (message: string, type: AlertType) => void;
+  showAlert: (message: string, type?: AlertType, detail?: string) => void;
   showConfirm: (message: string, title?: string) => Promise<boolean>;
 }
 
 const AlertContext = createContext<AlertContextType | undefined>(undefined);
+
+const ALERT_META: Record<AlertType, { title: string; icon: React.ReactNode; accent: string; glow: string }> = {
+  success: {
+    title: 'Guul / Success',
+    icon: <CheckCircle2 size={22} />,
+    accent: 'from-emerald-500 to-teal-500',
+    glow: 'shadow-emerald-500/25',
+  },
+  error: {
+    title: 'Khalad / Error',
+    icon: <AlertCircle size={22} />,
+    accent: 'from-rose-500 to-red-500',
+    glow: 'shadow-rose-500/25',
+  },
+  info: {
+    title: 'Fariin / Notice',
+    icon: <Info size={22} />,
+    accent: 'from-indigo-500 to-violet-500',
+    glow: 'shadow-indigo-500/25',
+  },
+};
 
 export const AlertProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [confirmState, setConfirmState] = useState<ConfirmState>({
     isOpen: false,
     message: '',
-    title: 'Xaqiijin', // Default Somali for "Confirmation"
+    title: 'Xaqiijin',
     resolve: null,
   });
 
-  const showAlert = useCallback((message: string, type: AlertType) => {
-    const id = Date.now().toString();
-    setAlerts(prev => [...prev, { id, message, type }]);
+  const showAlert = useCallback((message: string, type: AlertType = 'info', detail?: string) => {
+    const id = Date.now().toString() + Math.random().toString(36).slice(2, 6);
+    setAlerts(prev => [...prev, { id, message, type, detail }]);
 
     setTimeout(() => {
       setAlerts(prev => prev.filter(alert => alert.id !== id));
-    }, 6000);
+    }, detail ? 8000 : 5500);
   }, []);
 
   const removeAlert = useCallback((id: string) => {
@@ -67,74 +89,105 @@ export const AlertProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   return (
     <AlertContext.Provider value={{ showAlert, showConfirm }}>
       {children}
-      
-      {/* Toast Alerts */}
-      <div className="fixed top-6 right-6 z-[9999] flex flex-col gap-3 max-w-md w-full pointer-events-none">
-        <AnimatePresence>
-          {alerts.map(alert => (
-            <motion.div
-              key={alert.id}
-              initial={{ opacity: 0, y: -20, scale: 0.95 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95, transition: { duration: 0.2 } }}
-              className={`pointer-events-auto flex items-start gap-3 p-4 rounded-2xl border shadow-xl backdrop-blur-xl ${
-                alert.type === 'success' ? 'bg-emerald-50/95 border-emerald-200 text-emerald-900' :
-                alert.type === 'error' ? 'bg-rose-50/95 border-rose-200 text-rose-900' :
-                'bg-blue-50/95 border-blue-200 text-blue-900'
-              }`}
-            >
-              <div className="shrink-0 mt-0.5">
-                {alert.type === 'success' && <CheckCircle2 size={20} className="text-emerald-600" />}
-                {alert.type === 'error' && <AlertCircle size={20} className="text-rose-600" />}
-                {alert.type === 'info' && <Info size={20} className="text-blue-600" />}
-              </div>
-              <div className="flex-1">
-                <p className="text-sm font-semibold leading-snug">{alert.message}</p>
-              </div>
-              <button
-                onClick={() => removeAlert(alert.id)}
-                className={`shrink-0 p-1.5 rounded-full transition-colors ${
-                  alert.type === 'success' ? 'hover:bg-emerald-200/50 text-emerald-700' :
-                  alert.type === 'error' ? 'hover:bg-rose-200/50 text-rose-700' :
-                  'hover:bg-blue-200/50 text-blue-700'
-                }`}
+
+      {/* Toast notification cards */}
+      <div className="fixed top-5 right-5 z-[9999] flex flex-col gap-3 max-w-[min(420px,calc(100vw-2.5rem))] w-full pointer-events-none">
+        <AnimatePresence mode="popLayout">
+          {alerts.map(alert => {
+            const meta = ALERT_META[alert.type];
+            return (
+              <motion.div
+                key={alert.id}
+                layout
+                initial={{ opacity: 0, x: 40, scale: 0.92 }}
+                animate={{ opacity: 1, x: 0, scale: 1 }}
+                exit={{ opacity: 0, x: 40, scale: 0.92, transition: { duration: 0.2 } }}
+                transition={{ type: 'spring', stiffness: 420, damping: 32 }}
+                className={`pointer-events-auto relative overflow-hidden rounded-2xl border border-white/60 bg-white/95 backdrop-blur-xl shadow-2xl ${meta.glow}`}
               >
-                <X size={16} />
-              </button>
-            </motion.div>
-          ))}
+                {/* Accent stripe */}
+                <div className={`h-1 w-full bg-gradient-to-r ${meta.accent}`} />
+
+                <div className="p-4 flex gap-3.5">
+                  {/* Icon bubble */}
+                  <div className={`shrink-0 w-11 h-11 rounded-xl flex items-center justify-center text-white bg-gradient-to-br ${meta.accent} shadow-lg`}>
+                    {meta.icon}
+                  </div>
+
+                  <div className="flex-1 min-w-0 pt-0.5">
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="text-[10px] font-extrabold uppercase tracking-widest text-slate-400">
+                        {meta.title}
+                      </p>
+                      <button
+                        onClick={() => removeAlert(alert.id)}
+                        className="shrink-0 -mt-0.5 p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
+                        aria-label="Close notification"
+                      >
+                        <X size={15} />
+                      </button>
+                    </div>
+                    <p className="text-sm font-bold text-slate-900 leading-snug mt-0.5">
+                      {alert.message}
+                    </p>
+                    {alert.detail && (
+                      <p className="mt-2 text-[11px] font-mono text-slate-500 bg-slate-50 border border-slate-100 rounded-lg px-2.5 py-1.5 break-all leading-relaxed">
+                        {alert.detail}
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Auto-dismiss progress bar */}
+                <motion.div
+                  className={`h-0.5 bg-gradient-to-r ${meta.accent} origin-left`}
+                  initial={{ scaleX: 1 }}
+                  animate={{ scaleX: 0 }}
+                  transition={{ duration: alert.detail ? 8 : 5.5, ease: 'linear' }}
+                />
+              </motion.div>
+            );
+          })}
         </AnimatePresence>
       </div>
 
-      {/* Confirm Modal */}
+      {/* Confirm modal card */}
       <AnimatePresence>
         {confirmState.isOpen && (
-          <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
+          <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
             <motion.div
-              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              initial={{ opacity: 0, scale: 0.9, y: 16 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              exit={{ opacity: 0, scale: 0.9, y: 16 }}
+              transition={{ type: 'spring', stiffness: 380, damping: 28 }}
               className="bg-white rounded-3xl shadow-2xl border border-slate-100 max-w-sm w-full overflow-hidden"
             >
+              <div className="h-1.5 w-full bg-gradient-to-r from-indigo-500 to-violet-500" />
               <div className="p-6">
-                <div className="w-12 h-12 rounded-full bg-indigo-50 flex items-center justify-center mb-4 text-indigo-600">
-                  <HelpCircle size={24} />
+                <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-500 flex items-center justify-center mb-4 text-white shadow-lg shadow-indigo-500/30">
+                  <HelpCircle size={26} />
                 </div>
-                <h3 className="text-lg font-bold text-slate-900 mb-2">{confirmState.title}</h3>
+                <div className="flex items-center gap-1.5 mb-1">
+                  <Sparkles size={12} className="text-indigo-400" />
+                  <span className="text-[10px] font-extrabold uppercase tracking-widest text-slate-400">
+                    Xaqiijin / Confirm
+                  </span>
+                </div>
+                <h3 className="text-lg font-extrabold text-slate-900 mb-2">{confirmState.title}</h3>
                 <p className="text-sm text-slate-500 leading-relaxed">
                   {confirmState.message}
                 </p>
               </div>
-              <div className="px-6 py-4 bg-slate-50 flex justify-end gap-3 border-t border-slate-100">
+              <div className="px-6 py-4 bg-slate-50/80 flex justify-end gap-2.5 border-t border-slate-100">
                 <button
                   onClick={() => handleConfirm(false)}
-                  className="px-4 py-2 text-sm font-semibold text-slate-600 hover:text-slate-900 hover:bg-slate-200/50 rounded-xl transition-colors"
+                  className="px-4 py-2.5 text-sm font-bold text-slate-600 hover:text-slate-900 hover:bg-slate-200/60 rounded-xl transition-colors"
                 >
-                  Jooji (Cancel)
+                  Jooji
                 </button>
                 <button
                   onClick={() => handleConfirm(true)}
-                  className="px-4 py-2 text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 shadow-md shadow-indigo-200 rounded-xl transition-all"
+                  className="px-5 py-2.5 text-sm font-bold text-white bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700 shadow-lg shadow-indigo-500/25 rounded-xl transition-all"
                 >
                   Haa, Waan Hubaa
                 </button>

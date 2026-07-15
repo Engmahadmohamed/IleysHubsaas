@@ -7,6 +7,7 @@ import { db } from '../firebase';
 import { useAlert } from '../context/AlertContext';
 
 interface FeeData {
+  id?: string;
   studentName: string;
   studentId?: string;
   invoiceNumber: string;
@@ -15,6 +16,7 @@ interface FeeData {
   status: string;
   paidAt?: string;
   organizationId?: string;
+  studentDisplayId?: string;
 }
 
 export default function ReceiptVerification() {
@@ -31,14 +33,8 @@ export default function ReceiptVerification() {
   const orgId = searchParams.get('o') || '';
   const feeId = searchParams.get('f') || '';
 
-  // Legacy params (fallback for old links)
+  // Legacy params are no longer trusted for verification (security)
   const legacyInvoice = searchParams.get('i') || searchParams.get('invoice') || '';
-  const legacyStudent = searchParams.get('s') || searchParams.get('student') || '';
-  const legacyStudentId = searchParams.get('sid') || '';
-  const legacyAmount = searchParams.get('a') || searchParams.get('amount') || '0';
-  const legacyMonth = searchParams.get('m') || searchParams.get('month') || 'N/A';
-  const legacyOrgName = searchParams.get('o_name') || searchParams.get('org') || '';
-  const legacyDateParam = searchParams.get('d') || searchParams.get('date');
 
   const isShortLink = !!(orgId && feeId);
   const isLegacyLink = !!legacyInvoice;
@@ -48,16 +44,14 @@ export default function ReceiptVerification() {
       setIsLoading(true);
       const fetchFee = async () => {
         try {
-          // Fetch org name
           const orgSnap = await getDoc(doc(db, 'organizations', orgId));
           if (orgSnap.exists()) {
             setOrgName(orgSnap.data().name || '');
           }
 
-          // Fetch fee
           const feeSnap = await getDoc(doc(db, 'organizations', orgId, 'fees', feeId));
           if (feeSnap.exists()) {
-            const data = feeSnap.data() as FeeData;
+            const data: FeeData = { ...(feeSnap.data() || {}), id: feeSnap.id } as FeeData;
             
             if (data.studentId) {
               try {
@@ -75,15 +69,23 @@ export default function ReceiptVerification() {
             
             setFeeData(data);
             
-            if (data.studentId) {
+            if (data.studentId && data.status === 'paid') {
               try {
-                const debtsQuery = query(
-                  collection(db, 'organizations', orgId, 'fees'),
-                  where('studentId', '==', data.studentId),
-                  where('status', 'in', ['pending', 'unpaid'])
-                );
-                const debtsSnap = await getDocs(debtsQuery);
-                setDebtCount(debtsSnap.docs.length);
+                const [pendingSnap, unpaidSnap] = await Promise.all([
+                  getDocs(query(
+                    collection(db, 'organizations', orgId, 'fees'),
+                    where('studentId', '==', data.studentId),
+                    where('status', '==', 'pending')
+                  )),
+                  getDocs(query(
+                    collection(db, 'organizations', orgId, 'fees'),
+                    where('studentId', '==', data.studentId),
+                    where('status', '==', 'unpaid')
+                  )),
+                ]);
+                const otherDebts = [...pendingSnap.docs, ...unpaidSnap.docs]
+                  .filter(d => d.id !== feeId);
+                setDebtCount(otherDebts.length);
               } catch(e) {
                 console.error("Failed to fetch debts", e);
               }
@@ -100,19 +102,9 @@ export default function ReceiptVerification() {
       };
       fetchFee();
     } else if (isLegacyLink) {
-      // Populate from URL params (old link format)
-      setFeeData({
-        studentName: legacyStudent,
-        studentId: legacyStudentId,
-        invoiceNumber: legacyInvoice,
-        amount: legacyAmount,
-        month: legacyMonth,
-        status: 'paid',
-        paidAt: legacyDateParam ? new Date(legacyDateParam).toISOString() : new Date().toISOString(),
-      });
-      if (legacyOrgName) setOrgName(legacyOrgName);
+      setFetchError('Linkiga hore lama taageero. Fadlan isticmaal link cusub oo ka yimid nidaamka.');
     }
-  }, [orgId, feeId]);
+  }, [orgId, feeId, isShortLink, isLegacyLink]);
 
   const fee = feeData;
   

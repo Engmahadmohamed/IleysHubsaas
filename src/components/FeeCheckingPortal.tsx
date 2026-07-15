@@ -2,6 +2,22 @@ import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { Search, CreditCard, CheckCircle, AlertCircle, Calendar } from 'lucide-react';
 import { useParams } from 'react-router-dom';
+import { FeeRecord, Student } from '../types';
+
+const parseFeeMonth = (monthStr: string) => {
+  const parsed = new Date(monthStr);
+  if (!isNaN(parsed.getTime())) {
+    return {
+      short: parsed.toLocaleString('en-US', { month: 'short' }),
+      year: parsed.getFullYear(),
+    };
+  }
+  const parts = monthStr.trim().split(/\s+/);
+  return { short: parts[0]?.slice(0, 3) || monthStr, year: parts[1] || '' };
+};
+
+const isOutstandingFee = (status: FeeRecord['status']) =>
+  status === 'pending' || status === 'unpaid';
 
 export default function FeeCheckingPortal() {
   const { orgId } = useParams();
@@ -9,8 +25,8 @@ export default function FeeCheckingPortal() {
   
   const [studentIdInput, setStudentIdInput] = useState('');
   const [searchError, setSearchError] = useState('');
-  const [foundStudent, setFoundStudent] = useState<any | null>(null);
-  const [studentFees, setStudentFees] = useState<any[]>([]);
+  const [foundStudent, setFoundStudent] = useState<Student | null>(null);
+  const [studentFees, setStudentFees] = useState<FeeRecord[]>([]);
   const [searching, setSearching] = useState(false);
 
   const handleSearch = async (e: React.FormEvent) => {
@@ -46,13 +62,14 @@ export default function FeeCheckingPortal() {
     }
   };
 
-  const getMonthsString = (fees: any[]) => {
-    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    return fees.map(f => `${monthNames[f.month - 1]} ${f.year}`).join(', ');
-  };
+  const getMonthsString = (fees: FeeRecord[]) =>
+    fees.map(f => {
+      const { short, year } = parseFeeMonth(f.month);
+      return `${short} ${year}`.trim();
+    }).join(', ');
 
-  const pendingFees = studentFees.filter(f => f.status === 'pending');
-  const totalPendingAmount = pendingFees.reduce((sum, f) => sum + f.amount, 0);
+  const outstandingFees = studentFees.filter(f => isOutstandingFee(f.status));
+  const totalOutstandingAmount = outstandingFees.reduce((sum, f) => sum + f.amount, 0);
 
   return (
     <div className="min-h-screen bg-[#fcfcfd] text-slate-900 pb-12">
@@ -146,30 +163,30 @@ export default function FeeCheckingPortal() {
 
             {/* Fee Status Summary Card */}
             <div className={`rounded-2xl p-6 border card-shadow ${
-              pendingFees.length > 0 
+              outstandingFees.length > 0 
                 ? 'bg-rose-50 border-rose-200' 
                 : 'bg-emerald-50 border-emerald-200'
             }`}>
               <div className="flex items-start gap-4">
                 <div className={`p-3 rounded-xl ${
-                  pendingFees.length > 0 ? 'bg-rose-100 text-rose-600' : 'bg-emerald-100 text-emerald-600'
+                  outstandingFees.length > 0 ? 'bg-rose-100 text-rose-600' : 'bg-emerald-100 text-emerald-600'
                 }`}>
-                  {pendingFees.length > 0 ? <AlertCircle size={24} /> : <CheckCircle size={24} />}
+                  {outstandingFees.length > 0 ? <AlertCircle size={24} /> : <CheckCircle size={24} />}
                 </div>
                 <div>
                   <h3 className={`text-xl font-bold ${
-                    pendingFees.length > 0 ? 'text-rose-900' : 'text-emerald-900'
+                    outstandingFees.length > 0 ? 'text-rose-900' : 'text-emerald-900'
                   }`}>
-                    {pendingFees.length > 0 ? 'Waa Lagugu Leeyahay Lacag' : 'Wax Lacag Ah Laguguma Laha'}
+                    {outstandingFees.length > 0 ? 'Waa Lagugu Leeyahay Lacag' : 'Wax Lacag Ah Laguguma Laha'}
                   </h3>
                   
-                  {pendingFees.length > 0 ? (
+                  {outstandingFees.length > 0 ? (
                     <div className="mt-3">
                       <p className="text-rose-700 font-medium">
-                        Wadarta guud ee lagugu leeyahay waa: <span className="text-2xl font-black">${totalPendingAmount}</span>
+                        Wadarta guud ee lagugu leeyahay waa: <span className="text-2xl font-black">${totalOutstandingAmount}</span>
                       </p>
                       <p className="text-sm text-rose-600/80 mt-1">
-                        Bilaha la rabo: {getMonthsString(pendingFees)}
+                        Bilaha la rabo: {getMonthsString(outstandingFees)}
                       </p>
                     </div>
                   ) : (
@@ -192,18 +209,18 @@ export default function FeeCheckingPortal() {
                 </div>
                 <div className="divide-y divide-slate-100 max-h-[400px] overflow-y-auto">
                   {studentFees.map(fee => {
-                    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-                    const monthName = monthNames[fee.month - 1];
-                    const isPaid = fee.status === 'paid' || fee.status === 'approved';
+                    const { short: monthName, year } = parseFeeMonth(fee.month);
+                    const isPaid = fee.status === 'paid';
+                    const isOutstanding = isOutstandingFee(fee.status);
                     
                     return (
                       <div key={fee.id} className="p-4 flex items-center justify-between hover:bg-slate-50 transition-colors">
                         <div className="flex items-center gap-4">
                           <div className={`w-12 h-12 rounded-xl flex flex-col items-center justify-center font-bold text-sm ${
-                            isPaid ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'
+                            isPaid ? 'bg-emerald-50 text-emerald-700' : isOutstanding ? 'bg-rose-50 text-rose-700' : 'bg-slate-50 text-slate-500'
                           }`}>
                             <span className="text-xs uppercase">{monthName}</span>
-                            <span>{fee.year}</span>
+                            <span>{year}</span>
                           </div>
                           <div>
                             <p className="font-bold text-slate-800">Fee Invoice</p>
@@ -214,9 +231,9 @@ export default function FeeCheckingPortal() {
                           <div>
                             <p className="font-black text-slate-900">${fee.amount}</p>
                             <span className={`inline-flex px-2 py-0.5 rounded text-[10px] font-bold mt-1 ${
-                              isPaid ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'
+                              isPaid ? 'bg-emerald-100 text-emerald-700' : isOutstanding ? 'bg-rose-100 text-rose-700' : 'bg-slate-100 text-slate-600'
                             }`}>
-                              {isPaid ? 'La Bixiyay' : 'Waa Dhiman'}
+                              {isPaid ? 'La Bixiyay' : fee.status === 'cancelled' ? 'La Kansalay' : 'Waa Dhiman'}
                             </span>
                           </div>
                         </div>

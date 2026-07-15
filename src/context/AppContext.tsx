@@ -1,7 +1,8 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { 
   UserProfile, Organization, Student, Teacher, Subject, Room, 
-  AttendanceRecord, FeeRecord, SalaryRecord, Exam, ExamResultRecord, ClassSession
+  AttendanceRecord, FeeRecord, SalaryRecord, Exam, ExamResultRecord, ClassSession,
+  StudentSearchResult, StudentFeeSearchResult, StudentExamSearchResultItem
 } from '../types';
 import { db, auth, createSecondaryAuthUser, handleFirestoreError, OperationType } from '../firebase';
 import { 
@@ -55,6 +56,7 @@ interface AppContextType {
   currentOrg: Organization | null;
   loading: boolean;
   error: string | null;
+  clearError: () => void;
   suspendedUser: UserProfile | { email: string; fullName?: string } | null;
   setSuspendedUser: (user: UserProfile | { email: string; fullName?: string } | null) => void;
 
@@ -89,7 +91,7 @@ interface AppContextType {
   addStudent: (student: Omit<Student, 'id' | 'studentId' | 'createdAt'>) => void;
   updateStudent: (id: string, updates: Partial<Student>) => void;
   deleteStudent: (id: string) => void;
-  bulkImportStudents: (studentsData: any[]) => { successCount: number; errors: string[] };
+  bulkImportStudents: (studentsData: any[]) => Promise<{ successCount: number; errors: string[] }>;
 
   addTeacher: (teacher: Omit<Teacher, 'id' | 'createdAt'>) => void;
   updateTeacher: (id: string, updates: Partial<Teacher>) => void;
@@ -118,8 +120,8 @@ interface AppContextType {
   deleteExam: (id: string) => void;
   submitMarks: (examId: string, results: any[], average: number) => void;
   approveExamResults: (examId: string) => void;
-  searchStudentResults: (studentId: string) => Promise<{ student: Student; results: any[]; subjects: Subject[] } | null>;
-  searchStudentFees: (studentId: string, orgId: string) => Promise<{ student: Student; fees: FeeRecord[] } | null>;
+  searchStudentResults: (studentId: string) => Promise<StudentSearchResult | null>;
+  searchStudentFees: (studentId: string, orgId: string) => Promise<StudentFeeSearchResult | null>;
   selectActiveOrg: (org: Organization | null) => void;
   seedSampleData: () => Promise<void>;
 }
@@ -1063,8 +1065,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         password: teacherData.password
       });
       console.log('Successfully saved teacher and pending salary to Firestore');
+      return null;
     } catch (err) {
       console.error('Firestore teacher save error:', err);
+      return 'Cilad baa dhacday intii la kaydinayey macallinka';
     }
   };
 
@@ -1595,20 +1599,56 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   // Secure on-demand Student Transcript search for the Public Portal
-  const searchStudentFees = async (studentId: string, orgId: string): Promise<{ student: Student; fees: FeeRecord[] } | null> => {
+  const clearError = () => setError(null);
+
+  const searchStudentFees = async (studentId: string, orgId: string): Promise<StudentFeeSearchResult | null> => {
+    if (!db) {
+      throw new Error('Database is not initialized.');
+    }
     try {
       setLoading(true);
       setError(null);
       const cleanId = studentId.trim().toUpperCase();
       
       const studentsQuery = query(
-        collectionGroup(db, 'students'),
+        collection(db, 'organizations', orgId, 'students'),
         where('studentId', '==', cleanId),
-        where('organizationId', '==', orgId),
         limit(1)
       );
       
-      const studentSnap = await getDocs(studentsQuery);
+      let studentSnap;
+      try {
+        studentSnap = await getDocs(studentsQuery);
+      } catch (bloomErr) {
+        // Fallback for Bloom filter internal errors
+        const retryQuery = query(
+          collection(db, 'organizations', orgId, 'students'),
+          where('studentId', '==', cleanId),
+          limit(50)
+        );
+        studentSnap = await getDocs(retryQuery);
+      }
+
+      if (studentSnap.empty) {
+        // Fallback to internal 'id' matching if human-readable 'studentId' isn't found
+        const lowerId = cleanId.toLowerCase();
+        const fallbackQuery = query(
+          collection(db, 'organizations', orgId, 'students'),
+          where('id', '==', lowerId),
+          limit(1)
+        );
+        try {
+          studentSnap = await getDocs(fallbackQuery);
+        } catch (err) {
+          const fallbackRetryQuery = query(
+            collection(db, 'organizations', orgId, 'students'),
+            where('id', '==', lowerId),
+            limit(50)
+          );
+          studentSnap = await getDocs(fallbackRetryQuery);
+        }
+      }
+
       if (studentSnap.empty) {
         return null;
       }
@@ -1643,7 +1683,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
-  const searchStudentResults = async (studentId: string): Promise<{ student: Student; results: any[]; subjects: Subject[] } | null> => {
+  const searchStudentResults = async (studentId: string): Promise<StudentSearchResult | null> => {
     if (!db) {
       throw new Error('Database is not initialized.');
     }
@@ -1720,7 +1760,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         [student.id, student.studentId].map(normalizeId).filter(Boolean)
       );
 
-      const matchedResults: any[] = [];
+      const matchedResults: StudentExamSearchResultItem[] = [];
       resultsList.forEach(record => {
         if (!record.published) return;
 
@@ -1893,9 +1933,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setLoading(false);
     }
   };
-  // Auto-sync missing fees for active students (non-superadmin only)
+  // Auto-sync missing fees for active students (org admins/staff only)
   useEffect(() => {
-    if (!currentUser?.organizationId || currentUser.role === 'superadmin' || students.length === 0 || feeRecords.length === 0) return;
+    const canSyncFees = currentUser &&
+      currentUser.role !== 'superadmin' &&
+      currentUser.role !== 'teacher' &&
+      (currentUser.role === 'schooladmin' || currentUser.role === 'quranadmin' || currentUser.role === 'schoolstaff');
+    if (!canSyncFees || !currentUser?.organizationId || students.length === 0) return;
     
     const orgId = currentUser.organizationId;
     const timer = setTimeout(() => {
@@ -1945,7 +1989,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }, 5000); // 5 second debounce to wait for all snapshots to settle
     
     return () => clearTimeout(timer);
-  }, [students, feeRecords, currentUser?.organizationId]);
+  }, [students, feeRecords, currentUser?.organizationId, currentUser?.role]);
 
 
   return (
@@ -1956,6 +2000,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       currentOrg,
       loading,
       error,
+      clearError,
       suspendedUser,
       setSuspendedUser,
       organizations,
@@ -2007,6 +2052,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       submitMarks,
       approveExamResults,
       searchStudentResults,
+      searchStudentFees,
       selectActiveOrg,
       seedSampleData
     }}>

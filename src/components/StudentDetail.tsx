@@ -36,9 +36,9 @@ export default function StudentDetail() {
   
   // Fee records for student
   const studentFees = feeRecords.filter(f => f.studentId === student.id);
-  const paidFeesCount = studentFees.filter(f => f.status === 'paid' || f.status === 'approved').length;
-  const unpaidFeesCount = studentFees.filter(f => f.status === 'unpaid').length;
-  const totalPaidAmount = studentFees.filter(f => f.status === 'paid' || f.status === 'approved').reduce((acc, f) => acc + f.amount, 0);
+  const paidFeesCount = studentFees.filter(f => f.status === 'paid').length;
+  const unpaidFeesCount = studentFees.filter(f => f.status === 'unpaid' || f.status === 'pending').length;
+  const totalPaidAmount = studentFees.filter(f => f.status === 'paid').reduce((acc, f) => acc + f.amount, 0);
 
   // Attendance stats
   let totalPresent = 0;
@@ -272,10 +272,11 @@ export default function StudentDetail() {
                         <td className="font-bold text-slate-900">${fee.amount}</td>
                         <td>
                           <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
-                            (fee.status === 'paid' || fee.status === 'approved') ? 'bg-blue-50 text-blue-700 border border-blue-200' : 
+                            (fee.status === 'paid') ? 'bg-blue-50 text-blue-700 border border-blue-200' :
+                            fee.status === 'cancelled' ? 'bg-slate-50 text-slate-600 border border-slate-200' :
                             'bg-red-50 text-red-700 border border-red-200'
                           }`}>
-                            {(fee.status === 'paid' || fee.status === 'approved') ? 'Approved' : 'Unpaid'}
+                            {fee.status === 'paid' ? 'Paid' : fee.status === 'cancelled' ? 'Cancelled' : fee.status === 'pending' ? 'Pending' : 'Unpaid'}
                           </span>
                         </td>
                         <td className="text-slate-400">{fee.paidAt ? new Date(fee.paidAt).toLocaleDateString() : '-'}</td>

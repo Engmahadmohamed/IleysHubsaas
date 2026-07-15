@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
+import { Student, StudentExamSearchResultItem } from '../types';
 import {
   Search, Printer, Award, BookOpen, User, ShieldCheck,
   CheckCircle2, XCircle, AlertCircle, Hash, Loader2,
-  TrendingUp, GraduationCap, BarChart2, Star
+  GraduationCap, BarChart2
 } from 'lucide-react';
 
 // ─── Grade helpers ────────────────────────────────────────────────────────────
@@ -17,15 +18,15 @@ const gradeInfo = (marks: number) => {
 };
 
 const tierInfo = (avg: number) => {
-  if (avg >= 90) return { label: 'Excellent',    emoji: '🏆', color: '#059669', bg: '#ecfdf5' };
-  if (avg >= 75) return { label: 'Very Good',    emoji: '⭐', color: '#0d9488', bg: '#f0fdfa' };
-  if (avg >= 60) return { label: 'Good',         emoji: '👍', color: '#2563eb', bg: '#eff6ff' };
-  if (avg >= 50) return { label: 'Satisfactory', emoji: '✅', color: '#7c3aed', bg: '#f5f3ff' };
-  return              { label: 'Needs Work',   emoji: '📚', color: '#dc2626', bg: '#fef2f2' };
+  if (avg >= 90) return { label: 'Excellent',    emoji: '🏆', color: '#059669', bg: '#ecfdf5', border: '#6ee7b7' };
+  if (avg >= 75) return { label: 'Very Good',    emoji: '⭐', color: '#0d9488', bg: '#f0fdfa', border: '#99f6e4' };
+  if (avg >= 60) return { label: 'Good',         emoji: '👍', color: '#2563eb', bg: '#eff6ff', border: '#bfdbfe' };
+  if (avg >= 50) return { label: 'Satisfactory', emoji: '✅', color: '#7c3aed', bg: '#f5f3ff', border: '#ddd6fe' };
+  return              { label: 'Needs Work',   emoji: '📚', color: '#dc2626', bg: '#fef2f2', border: '#fecaca' };
 };
 
 // ─── Subject Result Card ──────────────────────────────────────────────────────
-const SubjectCard = ({ res, index }: { res: any; index: number }) => {
+const SubjectCard = ({ res, index }: { res: StudentExamSearchResultItem; index: number }) => {
   const g   = gradeInfo(res.marks);
   const pass = res.marks >= 50;
   const pct = Math.min(100, res.marks);
@@ -107,8 +108,8 @@ export default function ResultPortal() {
   const [input,     setInput]     = useState('');
   const [searching, setSearching] = useState(false);
   const [error,     setError]     = useState('');
-  const [student,   setStudent]   = useState<any>(null);
-  const [results,   setResults]   = useState<any[]>([]);
+  const [student,   setStudent]   = useState<Student | null>(null);
+  const [results,   setResults]   = useState<StudentExamSearchResultItem[]>([]);
   const [orgName,   setOrgName]   = useState('');
 
   // Auto-search from URL
@@ -135,7 +136,7 @@ export default function ResultPortal() {
       }
       setStudent(data.student);
       setResults(data.results);
-      setOrgName((data as any).orgName || '');
+      setOrgName(data.orgName || '');
     } catch (e: any) {
       console.error(e);
       setError('Raadinta waa ku guuldareystay. Dib u isku day.');
@@ -326,7 +327,7 @@ export default function ResultPortal() {
               {results.length > 0 && (
                 <div
                   className="flex items-center gap-3 px-5 py-4 rounded-2xl border result-in result-in-d1"
-                  style={{ background: tier.bg, borderColor: tier.border as any }}
+                  style={{ background: tier.bg, borderColor: tier.border }}
                 >
                   <span className="text-3xl">{tier.emoji}</span>
                   <div className="flex-1">

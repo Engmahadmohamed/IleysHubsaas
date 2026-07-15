@@ -282,8 +282,8 @@ service cloud.firestore {
     match /organizations/{organizationId} {
 
       // Only authenticated org members or superadmin can read org details;
-      // public result portal may read org name for display.
-      allow get: if isSuperAdmin() || belongsToOrganization(organizationId) || isSignedIn() || request.auth == null;
+      // public portals may read org name for display via direct doc get.
+      allow get: if isSuperAdmin() || belongsToOrganization(organizationId) || (request.auth == null && resource.data.name is string);
       allow list: if isSuperAdmin() || (isSignedIn() && userProfileExists());
       allow write: if isSuperAdmin() && (request.resource == null || isValidOrganization(request.resource.data));
 
@@ -291,8 +291,7 @@ service cloud.firestore {
       match /counters/{counterId} {
         allow read, write: if isSuperAdmin() ||
                               isOrganizationAdmin(organizationId) ||
-                              hasPermission(organizationId, 'Students') ||
-                              isStaff(organizationId);
+                              hasPermission(organizationId, 'Students');
       }
 
       // ---- STUDENTS ----
@@ -301,15 +300,13 @@ service cloud.firestore {
                        isOrganizationAdmin(organizationId) ||
                        isTeacher(organizationId) ||
                        hasPermission(organizationId, 'Students') ||
-                       isStaff(organizationId) ||
-                       request.auth == null; // public result/fee portal by studentId directly
+                       (request.auth == null && resource.data.studentId is string); // public fee/result portal
 
         allow list: if isSuperAdmin() ||
                        isOrganizationAdmin(organizationId) ||
                        isTeacher(organizationId) ||
                        hasPermission(organizationId, 'Students') ||
-                       isStaff(organizationId) ||
-                       (request.auth == null && request.query.limit <= 50); // public result/fee portal search
+                       (request.auth == null && request.query.limit <= 1); // public result/fee portal search
 
         allow create: if (isSuperAdmin() || isOrganizationAdmin(organizationId) || hasPermission(organizationId, 'Students')) &&
                          isValidStudent(request.resource.data) &&
@@ -415,14 +412,12 @@ service cloud.firestore {
         allow get: if isSuperAdmin() ||
                       isOrganizationAdmin(organizationId) ||
                       hasPermission(organizationId, 'Fees') ||
-                      isTeacher(organizationId) ||
                       (request.auth == null && resource.data.invoiceNumber is string); // receipt check only
 
-        // List: org members + fee portal (unauthenticated, by studentId)
+        // List: org members + fee portal / receipt debt lookup (unauthenticated, by studentId)
         allow list: if isSuperAdmin() ||
                        isOrganizationAdmin(organizationId) ||
                        hasPermission(organizationId, 'Fees') ||
-                       isTeacher(organizationId) ||
                        (request.auth == null && request.query.limit <= 50); // fee portal by studentId
 
         allow create: if (isSuperAdmin() || isOrganizationAdmin(organizationId) || hasPermission(organizationId, 'Fees')) &&
