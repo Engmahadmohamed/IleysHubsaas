@@ -5163,8 +5163,8 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                                           const verifyUrl = `${window.location.origin}/verify-receipt?o=${encodeURIComponent(currentOrg?.id || '')}&f=${encodeURIComponent(fee.id || '')}`;
                                           const msg =
                                             `Salaam ${fee.studentName}! 🎓\n\n` +
-                                            `Lacagtaada bishii *${fee.month}* waa la qabtay ✅\n\n` +
-                                            `📄 Risiidhkaaga rasmi ah soo daji halkan:\n${verifyUrl}\n\n` +
+                                            `Waxaan ku wargelinaynaa in lacag bixintaadii *${fee.month}* la diiwaangeliyey.✅\n\n` +
+                                            `📄 Rasiidhkaaga ka soo degso:\n${verifyUrl}\n\n` +
                                             `💳 Lacagta: *$${fee.amount}*\n` +
                                             `📅 Taariikhda: ${new Date().toLocaleDateString()}\n\n` +
                                             `Mahadsanid! — ${currentOrg?.name || ''}`;
@@ -7020,8 +7020,8 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                       const verifyUrl = `${window.location.origin}/verify-receipt?o=${encodeURIComponent(currentOrg?.id || '')}&f=${encodeURIComponent(feeRecord.id || '')}`;
                       const msg =
                         `Salaam ${feeRecord.studentName}! 🎓\n\n` +
-                        `Lacagtaada bishii *${feeRecord.month}* waa la qabtay ✅\n\n` +
-                        `📄 Risiidhkaaga rasmi ah soo daji halkan:\n${verifyUrl}\n\n` +
+                        `Waxaan ku wargelinaynaa in lacag bixintaadii *${feeRecord.month}* la diiwaangeliyey.✅\n\n` +
+                        `📄 Rasiidhkaaga ka soo degso:\n${verifyUrl}\n\n` +
                         `💳 Lacagta: *$${feeRecord.amount}*\n` +
                         `📅 Taariikhda: ${new Date().toLocaleDateString()}\n\n` +
                         `Mahadsanid! — ${currentOrg?.name || ''}`;
