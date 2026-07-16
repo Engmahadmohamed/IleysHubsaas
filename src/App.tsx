@@ -170,7 +170,7 @@ function LoginLayout() {
 
       {/* Footer Branding */}
       <footer className="py-6 border-t border-slate-200/50 text-center text-xs text-slate-400 bg-white">
-        <p className="font-medium">© 2026 IleysHub. Built for school administration and memorization networks.</p>
+        <p className="font-medium">© 2026 IleysHub.All rights reserved.</p>
       </footer>
     </div>
   );
