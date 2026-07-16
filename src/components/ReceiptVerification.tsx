@@ -5,6 +5,7 @@ import { jsPDF } from 'jspdf';
 import { doc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAlert } from '../context/AlertContext';
+import { generateThemeVars, hexToJsPdfRgb } from '../lib/themeUtils';
 
 interface FeeData {
   id?: string;
@@ -26,6 +27,7 @@ export default function ReceiptVerification() {
   const [isLoading, setIsLoading] = useState(false);
   const [feeData, setFeeData] = useState<FeeData | null>(null);
   const [orgName, setOrgName] = useState('');
+  const [orgThemeColor, setOrgThemeColor] = useState('#0f172a'); // default dark
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [debtCount, setDebtCount] = useState<number>(0);
 
@@ -47,6 +49,7 @@ export default function ReceiptVerification() {
           const orgSnap = await getDoc(doc(db, 'organizations', orgId));
           if (orgSnap.exists()) {
             setOrgName(orgSnap.data().name || '');
+            setOrgThemeColor(orgSnap.data().themeColor || '#0f172a');
           }
 
           const feeSnap = await getDoc(doc(db, 'organizations', orgId, 'fees', feeId));
@@ -153,11 +156,16 @@ export default function ReceiptVerification() {
       doc.setFillColor(250, 251, 253);
       doc.rect(0, 0, W, H, 'F');
 
-      // Header dark band
-      doc.setFillColor(15, 23, 42);
+      // Header band — use school brand color
+      const brandRgb = hexToJsPdfRgb(orgThemeColor);
+      doc.setFillColor(...brandRgb);
       doc.rect(0, 0, W, 26, 'F');
-      // Accent stripe
-      doc.setFillColor(16, 185, 129);
+      // Accent stripe — slightly lighter
+      doc.setFillColor(
+        Math.min(255, brandRgb[0] + 40),
+        Math.min(255, brandRgb[1] + 40),
+        Math.min(255, brandRgb[2] + 40)
+      );
       doc.rect(0, 26, W, 2, 'F');
 
       // Org Name

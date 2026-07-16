@@ -8,7 +8,7 @@ import {
 } from '../types';
 import { db, auth, createSecondaryAuthUser, handleFirestoreError, OperationType } from '../firebase';
 import { 
-  doc, setDoc, updateDoc, deleteDoc, collection, collectionGroup, onSnapshot, getDoc, getDocs, query, where, limit, runTransaction
+  doc, setDoc, updateDoc, deleteDoc, collection, collectionGroup, onSnapshot, getDoc, getDocs, query, where, limit, runTransaction, getDocsFromServer, getDocFromServer
 } from 'firebase/firestore';
 import { 
   signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, updatePassword, sendPasswordResetEmail, onAuthStateChanged 
@@ -286,9 +286,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [isEnabled, isSuper, orgId]);
 
   // Fees — real-time listener (admin approves/cancels, UI updates instantly)
+  // Only admins and staff with Fees permission subscribe (teachers don't have fee read access)
+  const isAdmin = currentUser?.role === 'schooladmin' || currentUser?.role === 'quranadmin';
+  const isStaffWithFees = currentUser?.role === 'schoolstaff' && (currentUser?.permissions || []).includes('Fees');
+  const canReadFees = isAdmin || isStaffWithFees;
+
   const [feeRecords, setFeeRecords] = useState<FeeRecord[]>([]);
   useEffect(() => {
-    if (!isEnabled || isSuper || !orgId) { setFeeRecords([]); return; }
+    if (!isEnabled || isSuper || !orgId || !canReadFees) { setFeeRecords([]); return; }
     const unsubFees = onSnapshot(
       collection(db, 'organizations', orgId, 'fees'),
       (snap) => {
@@ -300,7 +305,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       (err) => console.error('Fees listener error:', err)
     );
     return () => unsubFees();
-  }, [isEnabled, isSuper, orgId]);
+  }, [isEnabled, isSuper, orgId, canReadFees]);
 
   const { data: salaryRecords = [] } = useQuery({
     queryKey: ['salaryRecords', orgId],
@@ -1690,7 +1695,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       let studentSnap;
       try {
-        studentSnap = await getDocs(studentsQuery);
+        studentSnap = await getDocsFromServer(studentsQuery);
       } catch (bloomErr: any) {
         // Firestore BloomFilter internal error — retry once (keep limit ≤ 1 for public portal rules)
         console.warn('BloomFilter error on collectionGroup, retrying...', bloomErr);
@@ -1699,7 +1704,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           where('studentId', '==', cleanId),
           limit(1)
         );
-        studentSnap = await getDocs(retryQuery);
+        studentSnap = await getDocsFromServer(retryQuery);
       }
 
       // If not found by human-readable ID, fallback to internal 'id' (e.g., 'std-12345')
@@ -1711,14 +1716,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           limit(1)
         );
         try {
-          studentSnap = await getDocs(fallbackQuery);
+          studentSnap = await getDocsFromServer(fallbackQuery);
         } catch (err) {
           const fallbackRetryQuery = query(
             collectionGroup(db, 'students'),
             where('id', '==', lowerId),
             limit(1)
           );
-          studentSnap = await getDocs(fallbackRetryQuery);
+          studentSnap = await getDocsFromServer(fallbackRetryQuery);
         }
       }
 
@@ -1734,13 +1739,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         collection(db, 'organizations', orgId, 'exam_results'),
         where('published', '==', true)
       );
-      const resultsSnap = await getDocs(resultsQuery);
+      const resultsSnap = await getDocsFromServer(resultsQuery);
       const resultsList: ExamResultRecord[] = [];
       resultsSnap.forEach((doc) => {
         resultsList.push({ ...doc.data(), id: doc.id } as ExamResultRecord);
       });
       
-      const subjectsSnap = await getDocs(collection(db, 'organizations', orgId, 'subjects'));
+      const subjectsSnap = await getDocsFromServer(collection(db, 'organizations', orgId, 'subjects'));
       const subjectsList: Subject[] = [];
       subjectsSnap.forEach((doc) => {
         subjectsList.push({ ...doc.data(), id: doc.id } as Subject);
@@ -1770,11 +1775,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
       });
       
-      // Fetch org name for display
+      // Fetch org name and theme for display
       let orgName = '';
+      let themeColor = 'indigo';
       try {
-        const orgSnap = await getDoc(doc(db, 'organizations', orgId));
-        if (orgSnap.exists()) orgName = orgSnap.data().name || '';
+        const orgSnap = await getDocFromServer(doc(db, 'organizations', orgId));
+        if (orgSnap.exists()) {
+          orgName = orgSnap.data().name || '';
+          themeColor = orgSnap.data().themeColor || 'indigo';
+        }
       } catch (_) { /* non-critical */ }
 
       return {
@@ -1782,6 +1791,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         results: matchedResults,
         subjects: subjectsList,
         orgName,
+        themeColor,
       };
     } catch (err: any) {
       console.error('Error during student results search:', err);

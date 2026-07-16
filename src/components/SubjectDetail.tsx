@@ -60,7 +60,7 @@ export default function SubjectDetail() {
       {/* Profile Header Grid */}
       <div className="bg-white p-6 md:p-8 rounded-2xl border border-gray-100 card-shadow grid grid-cols-1 md:grid-cols-12 gap-6 items-center">
         <div className="md:col-span-3 flex justify-center">
-          <div className="w-32 h-32 md:w-40 md:h-40 rounded-2xl bg-slate-50 border border-slate-100 flex items-center justify-center text-indigo-500">
+          <div className="w-32 h-32 md:w-40 md:h-40 rounded-2xl bg-slate-50 border border-slate-100 flex items-center justify-center text-primary-500">
             <BookOpen size={54} />
           </div>
         </div>
@@ -94,7 +94,7 @@ export default function SubjectDetail() {
             </div>
             <div className="p-3 bg-slate-50 rounded-xl col-span-2 sm:col-span-1">
               <span className="block text-[10px] uppercase font-bold text-slate-400">Registered Students</span>
-              <span className="text-sm font-bold text-indigo-600">{registeredStudents.length} Active</span>
+              <span className="text-sm font-bold text-primary-600">{registeredStudents.length} Active</span>
             </div>
           </div>
         </div>
@@ -107,7 +107,7 @@ export default function SubjectDetail() {
           {/* Assigned Faculty */}
           <div className="bg-white p-5 rounded-2xl border border-gray-100 card-shadow space-y-4">
             <h3 className="font-sans font-bold text-slate-800 text-sm uppercase tracking-wider flex items-center gap-2">
-              <User size={16} className="text-indigo-500" /> Assigned Faculty (Macallinka)
+              <User size={16} className="text-primary-500" /> Assigned Faculty (Macallinka)
             </h3>
             
             {teacher ? (

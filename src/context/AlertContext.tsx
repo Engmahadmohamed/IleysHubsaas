@@ -41,8 +41,8 @@ const ALERT_META: Record<AlertType, { title: string; icon: React.ReactNode; acce
   info: {
     title: 'Fariin / Notice',
     icon: <Info size={22} />,
-    accent: 'from-indigo-500 to-violet-500',
-    glow: 'shadow-indigo-500/25',
+    accent: 'from-primary-500 to-violet-500',
+    glow: 'shadow-primary-500/25',
   },
 };
 
@@ -162,13 +162,13 @@ export const AlertProvider: React.FC<{ children: ReactNode }> = ({ children }) =
               transition={{ type: 'spring', stiffness: 380, damping: 28 }}
               className="bg-white rounded-3xl shadow-2xl border border-slate-100 max-w-sm w-full overflow-hidden"
             >
-              <div className="h-1.5 w-full bg-gradient-to-r from-indigo-500 to-violet-500" />
+              <div className="h-1.5 w-full bg-gradient-to-r from-primary-500 to-violet-500" />
               <div className="p-6">
-                <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-500 flex items-center justify-center mb-4 text-white shadow-lg shadow-indigo-500/30">
+                <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-primary-500 to-violet-500 flex items-center justify-center mb-4 text-white shadow-lg shadow-primary-500/30">
                   <HelpCircle size={26} />
                 </div>
                 <div className="flex items-center gap-1.5 mb-1">
-                  <Sparkles size={12} className="text-indigo-400" />
+                  <Sparkles size={12} className="text-primary-400" />
                   <span className="text-[10px] font-extrabold uppercase tracking-widest text-slate-400">
                     Xaqiijin / Confirm
                   </span>
@@ -187,7 +187,7 @@ export const AlertProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 </button>
                 <button
                   onClick={() => handleConfirm(true)}
-                  className="px-5 py-2.5 text-sm font-bold text-white bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700 shadow-lg shadow-indigo-500/25 rounded-xl transition-all"
+                  className="px-5 py-2.5 text-sm font-bold text-white bg-gradient-to-r from-primary-600 to-violet-600 hover:from-primary-700 hover:to-violet-700 shadow-lg shadow-primary-500/25 rounded-xl transition-all"
                 >
                   Haa, Waan Hubaa
                 </button>

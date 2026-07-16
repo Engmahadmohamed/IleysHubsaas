@@ -2733,7 +2733,7 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                     return (
                       <div key={cs.id} className="py-5 first:pt-0 last:pb-0 flex flex-col justify-between items-start gap-4">
                         <div className="space-y-1">
-                          <p className="text-xs font-bold text-indigo-600 tracking-wider uppercase font-mono">
+                          <p className="text-xs font-bold text-primary-600 tracking-wider uppercase font-mono">
                             {cs.startTime} - {cs.endTime}
                           </p>
                           <h4 className="text-base font-bold text-slate-900">
@@ -2908,17 +2908,17 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                   <div 
                     key={cs.id} 
                     onClick={() => setExamTeacherSessionId(cs.id)}
-                    className="bg-white p-6 rounded-2xl border border-gray-100 card-shadow hover:border-indigo-500 hover:ring-2 hover:ring-indigo-100 transition-all cursor-pointer group"
+                    className="bg-white p-6 rounded-2xl border border-gray-100 card-shadow hover:border-primary-500 hover:ring-2 hover:ring-primary-100 transition-all cursor-pointer group"
                   >
                     <div className="flex items-center justify-between mb-4">
-                      <span className="px-3 py-1 bg-indigo-50 text-indigo-700 rounded-full text-xs font-bold font-mono border border-indigo-100">
+                      <span className="px-3 py-1 bg-primary-50 text-primary-700 rounded-full text-xs font-bold font-mono border border-primary-100">
                         {cs.startTime} - {cs.endTime}
                       </span>
                       <span className="flex items-center gap-1.5 text-xs font-semibold text-slate-500 bg-slate-50 px-2 py-1 rounded-lg">
                         <Users size={14} /> {studentCount}
                       </span>
                     </div>
-                    <h4 className="text-lg font-bold text-slate-900 mb-1 group-hover:text-indigo-600 transition-colors">{sub?.name || cs.subjectId}</h4>
+                    <h4 className="text-lg font-bold text-slate-900 mb-1 group-hover:text-primary-600 transition-colors">{sub?.name || cs.subjectId}</h4>
                     <p className="text-sm text-slate-500 font-medium flex items-center gap-1.5">
                       <BookOpen size={14} /> {roomName}
                     </p>
@@ -2975,7 +2975,7 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                                 setMarksData(defaults);
                                 setActiveModal('enterMarks');
                               }}
-                              className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 rounded-xl text-sm transition-colors shadow-sm flex justify-center items-center gap-2"
+                              className="w-full bg-primary-600 hover:bg-primary-700 text-white font-bold py-2.5 rounded-xl text-sm transition-colors shadow-sm flex justify-center items-center gap-2"
                             >
                               <Edit2 size={16} /> Enter Marks
                             </button>
@@ -3255,7 +3255,7 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                     <div className="space-y-6">
                       {/* Dashboard metrics */}
                       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                        <div className="bg-gradient-to-br from-indigo-500 to-indigo-600 p-5 rounded-2xl shadow-[0_8px_30px_-4px_rgba(99,102,241,0.4)] text-white border border-indigo-400">
+                        <div className="bg-gradient-to-br from-primary-500 to-primary-600 p-5 rounded-2xl shadow-[0_8px_30px_-4px_rgba(99,102,241,0.4)] text-white border border-primary-400">
                           <span className="text-white opacity-90"><Users size={20} /></span>
                           <p className="text-[10px] font-bold text-white/80 uppercase tracking-wider mt-2">{t('dashboard.totalStudents')}</p>
                           <p className="text-3xl font-bold mt-1 text-white">{totalStudents}</p>
@@ -3525,7 +3525,7 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                                   {(student.fullName || '').substring(0, 2)}
                                 </div>
                                 <div>
-                                  <Link to={`/portal/students/${student.id}`} className="font-semibold text-slate-900 hover:text-indigo-600 hover:underline transition-colors">
+                                  <Link to={`/portal/students/${student.id}`} className="font-semibold text-slate-900 hover:text-primary-600 hover:underline transition-colors">
                                     {student.fullName}
                                   </Link>
                                   <p className="text-[10px] font-bold text-slate-500">{student.studentId}</p>
@@ -3663,7 +3663,7 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                       ) : (
                         orgTeachers.map(teacher => (
                           <tr key={teacher.id} className="hover:bg-slate-50/50">
-                            <td className="p-4 font-semibold text-slate-900"><Link to={`/portal/teachers/${teacher.id}`} className="hover:text-indigo-600 hover:underline transition-colors">{teacher.fullName}</Link></td>
+                            <td className="p-4 font-semibold text-slate-900"><Link to={`/portal/teachers/${teacher.id}`} className="hover:text-primary-600 hover:underline transition-colors">{teacher.fullName}</Link></td>
                             <td className="p-4 text-xs text-slate-500">
                               <p>{teacher.email}</p>
                               <p>{teacher.phone}</p>
@@ -3876,7 +3876,7 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
 
                         <div className="space-y-3">
                           <div>
-                            <span className="text-[10px] font-bold text-indigo-700 bg-indigo-50 px-2.5 py-1 rounded-lg uppercase tracking-wider font-mono">
+                            <span className="text-[10px] font-bold text-primary-700 bg-primary-50 px-2.5 py-1 rounded-lg uppercase tracking-wider font-mono">
                               {cs.classCode}
                             </span>
                             <h3 className="text-base font-bold text-slate-900 mt-2.5 leading-tight">{sub?.name || 'Maaddo kale'}</h3>
@@ -3913,7 +3913,7 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                           </div>
                           <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
                             <div 
-                              className={`h-full transition-all ${percentFilled >= 100 ? 'bg-red-500' : percentFilled >= 80 ? 'bg-amber-500' : 'bg-indigo-600'}`} 
+                              className={`h-full transition-all ${percentFilled >= 100 ? 'bg-red-500' : percentFilled >= 80 ? 'bg-amber-500' : 'bg-primary-600'}`} 
                               style={{ width: `${percentFilled}%` }} 
                             />
                           </div>
@@ -4053,7 +4053,7 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-5">
                 <div>
                   <h2 className="text-xl font-bold tracking-tight text-slate-900 flex items-center gap-2">
-                    <span className="p-1.5 bg-indigo-50 text-indigo-700 rounded-xl"><Calendar size={20} /></span>
+                    <span className="p-1.5 bg-primary-50 text-primary-700 rounded-xl"><Calendar size={20} /></span>
                     Maareynta Maqnaanshaha (Attendance & Absentee)
                   </h2>
                   <p className="text-xs text-slate-500 mt-1">Diiwaangeli xaadirinta maalin laha ah, eeg ardayda maqan ama xiriirka u maqan.</p>
@@ -4066,7 +4066,7 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                       onClick={() => setAttendanceSubTab('take')}
                       className={`px-4 py-1.5 rounded-xl text-xs font-bold uppercase tracking-wider transition-all cursor-pointer ${
                         attendanceSubTab === 'take' 
-                          ? 'bg-white text-indigo-950 shadow-sm' 
+                          ? 'bg-white text-primary-950 shadow-sm' 
                           : 'text-slate-500 hover:text-slate-800'
                       }`}
                     >
@@ -4076,7 +4076,7 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                       onClick={() => setAttendanceSubTab('absentee')}
                       className={`px-4 py-1.5 rounded-xl text-xs font-bold uppercase tracking-wider transition-all cursor-pointer ${
                         attendanceSubTab === 'absentee' 
-                          ? 'bg-white text-indigo-950 shadow-sm' 
+                          ? 'bg-white text-primary-950 shadow-sm' 
                           : 'text-slate-500 hover:text-slate-800'
                       }`}
                     >
@@ -4086,7 +4086,7 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                       onClick={() => setAttendanceSubTab('records')}
                       className={`px-4 py-1.5 rounded-xl text-xs font-bold uppercase tracking-wider transition-all cursor-pointer ${
                         attendanceSubTab === 'records' 
-                          ? 'bg-white text-indigo-950 shadow-sm' 
+                          ? 'bg-white text-primary-950 shadow-sm' 
                           : 'text-slate-500 hover:text-slate-800'
                       }`}
                     >
@@ -4096,7 +4096,7 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                       onClick={() => setAttendanceSubTab('history')}
                       className={`px-4 py-1.5 rounded-xl text-xs font-bold uppercase tracking-wider transition-all cursor-pointer ${
                         attendanceSubTab === 'history' 
-                          ? 'bg-white text-indigo-950 shadow-sm' 
+                          ? 'bg-white text-primary-950 shadow-sm' 
                           : 'text-slate-500 hover:text-slate-800'
                       }`}
                     >
@@ -4154,7 +4154,7 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                                 }}
                                 className={`text-left p-5 rounded-2xl border transition-all duration-200 cursor-pointer flex flex-col justify-between h-full relative overflow-hidden group ${
                                   isSelected 
-                                    ? 'bg-indigo-950 border-indigo-950 text-white shadow-md' 
+                                    ? 'bg-primary-950 border-primary-950 text-white shadow-md' 
                                     : 'bg-white hover:bg-slate-50/80 border-slate-200 hover:border-slate-300 text-slate-800'
                                 }`}
                               >
@@ -4170,12 +4170,12 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                                     <div className="space-y-1">
                                       <div className="flex items-center gap-1.5 flex-wrap">
                                         <span className={`text-[10px] font-mono font-bold tracking-wider px-2 py-0.5 rounded-md ${
-                                          isSelected ? 'bg-indigo-900 text-indigo-200' : 'bg-indigo-50 text-indigo-700 font-semibold'
+                                          isSelected ? 'bg-primary-900 text-primary-200' : 'bg-primary-50 text-primary-700 font-semibold'
                                         }`}>
                                           {cs.classCode}
                                         </span>
                                         <span className={`text-[10px] font-semibold tracking-wider px-2 py-0.5 rounded-md ${
-                                          isSelected ? 'bg-indigo-900 text-indigo-200' : 'bg-slate-100 text-slate-600'
+                                          isSelected ? 'bg-primary-900 text-primary-200' : 'bg-slate-100 text-slate-600'
                                         }`}>
                                           {cs.startTime} - {cs.endTime}
                                         </span>
@@ -4186,27 +4186,27 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
 
                                   <div className="space-y-1.5 pt-1">
                                     <div className="flex items-center gap-2 text-xs">
-                                      <span className={isSelected ? 'text-indigo-200' : 'text-slate-400 font-medium'}>Room:</span>
+                                      <span className={isSelected ? 'text-primary-200' : 'text-slate-400 font-medium'}>Room:</span>
                                       <span className="font-bold">{roomObj?.roomNumber || 'N/A'}</span>
                                       {roomObj?.building && (
-                                        <span className={`text-[10px] px-1.5 py-0.2 rounded ${isSelected ? 'bg-indigo-900 text-indigo-300' : 'bg-slate-100 text-slate-500'}`}>
+                                        <span className={`text-[10px] px-1.5 py-0.2 rounded ${isSelected ? 'bg-primary-900 text-primary-300' : 'bg-slate-100 text-slate-500'}`}>
                                           {roomObj.building}
                                         </span>
                                       )}
                                     </div>
                                     <div className="flex items-center gap-2 text-xs">
-                                      <span className={isSelected ? 'text-indigo-200' : 'text-slate-400 font-medium'}>Maalmaha (Days):</span>
+                                      <span className={isSelected ? 'text-primary-200' : 'text-slate-400 font-medium'}>Maalmaha (Days):</span>
                                       <span className="font-bold font-mono text-[10px]">{cs.days.join(', ')}</span>
                                     </div>
                                     <div className="flex items-center gap-2 text-xs">
-                                      <span className={isSelected ? 'text-indigo-200' : 'text-slate-400 font-medium'}>Ardayda (Students):</span>
+                                      <span className={isSelected ? 'text-primary-200' : 'text-slate-400 font-medium'}>Ardayda (Students):</span>
                                       <span className="font-bold">{studentCount} arday</span>
                                     </div>
                                   </div>
                                 </div>
 
                                 <div className={`mt-4 pt-3 border-t w-full flex items-center justify-between text-xs font-semibold ${
-                                  isSelected ? 'border-indigo-900 text-emerald-400' : 'border-slate-100 text-indigo-600 group-hover:text-indigo-800'
+                                  isSelected ? 'border-primary-900 text-emerald-400' : 'border-slate-100 text-primary-600 group-hover:text-primary-800'
                                 }`}>
                                   <span>{isSelected ? 'Hadda Xaajiri (Currently Selecting)' : 'Guji si aad u Xaajiriso (Click to Take)'}</span>
                                   <svg className="w-4 h-4 transition-transform group-hover:translate-x-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -4432,7 +4432,7 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                           }}
                           className={`font-bold text-xs px-5 py-2 rounded-xl transition-all shadow-sm cursor-pointer ${
                             attSaved
-                              ? 'bg-indigo-600 hover:bg-indigo-700 text-white'
+                              ? 'bg-primary-600 hover:bg-primary-700 text-white'
                               : 'bg-black hover:bg-slate-800 text-white'
                           }`}
                         >
@@ -4536,7 +4536,7 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                           </div>
 
                           <div className="bg-white p-5 rounded-2xl border border-slate-100 card-shadow flex items-center gap-4">
-                            <div className="p-3 bg-indigo-50 text-indigo-600 rounded-xl flex-shrink-0">
+                            <div className="p-3 bg-primary-50 text-primary-600 rounded-xl flex-shrink-0">
                               <School size={24} />
                             </div>
                             <div>
@@ -4585,7 +4585,7 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                                       <tr key={item.id} className="hover:bg-slate-50/50 transition-colors">
                                         <td className="p-3.5 font-bold text-slate-900">{item.studentName}</td>
                                         <td className="p-3.5">
-                                          <div className="font-semibold text-indigo-900">{item.subjectName}</div>
+                                          <div className="font-semibold text-primary-900">{item.subjectName}</div>
                                           <div className="text-[10px] text-slate-400 font-mono flex items-center gap-1 mt-0.5">
                                             <Clock size={11} /> {item.startTime} - {item.endTime}
                                           </div>
@@ -4927,7 +4927,7 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                                       <div className="text-[9px] text-slate-400 font-mono mt-0.5">{new Date(record.createdAt || record.date).toLocaleTimeString()}</div>
                                     </td>
                                     <td className="p-4">
-                                      <div className="font-bold text-indigo-900">{sub?.name || 'Class Session'}</div>
+                                      <div className="font-bold text-primary-900">{sub?.name || 'Class Session'}</div>
                                     </td>
                                     <td className="p-4">
                                       <span className="inline-flex items-center gap-1.5 bg-emerald-50 text-emerald-700 px-2.5 py-1 rounded-lg font-bold text-[11px]">
@@ -5519,7 +5519,7 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                         setExamForm({ title: '', type: 'class', subjectId: '', targetClass: '', sessionId: '' });
                         setActiveModal('addExam');
                       }}
-                      className="flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-5 py-2.5 rounded-xl transition-all shadow-md hover:shadow-lg w-full md:w-auto"
+                      className="flex items-center justify-center gap-2 bg-primary-600 hover:bg-primary-700 text-white font-bold px-5 py-2.5 rounded-xl transition-all shadow-md hover:shadow-lg w-full md:w-auto"
                     >
                       <Plus size={18} /> Create Exam
                     </button>
@@ -5527,7 +5527,7 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                     <div className="bg-white p-5 rounded-2xl border border-gray-100 card-shadow flex items-center gap-4">
-                      <div className="w-12 h-12 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-600">
+                      <div className="w-12 h-12 rounded-xl bg-primary-50 flex items-center justify-center text-primary-600">
                         <BookOpen size={24} />
                       </div>
                       <div>
@@ -5602,7 +5602,7 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                                   setMarksData(defaults);
                                   setActiveModal('enterMarks');
                                 }}
-                                className="px-4 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-sm rounded-xl transition-colors flex items-center gap-2"
+                                className="px-4 py-2 bg-primary-50 hover:bg-primary-100 text-primary-700 font-bold text-sm rounded-xl transition-colors flex items-center gap-2"
                               >
                                 <Edit2 size={16} /> Enter Marks
                               </button>
@@ -5620,7 +5620,7 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                                 </button>
                                 <button
                                   onClick={() => handleDownloadTemplate(ex)}
-                                  className="p-2 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+                                  className="p-2 text-slate-500 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-colors"
                                   title="Download Template"
                                 >
                                   <Download size={16} />
@@ -6122,7 +6122,7 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
 
                   <div className="p-4 sm:p-5 bg-slate-50 border border-slate-100 rounded-2xl flex flex-col lg:flex-row lg:items-center justify-between gap-4">
                     <div className="flex items-center gap-3 overflow-hidden min-w-0">
-                      <div className="w-10 h-10 sm:w-12 sm:h-12 bg-indigo-50 text-indigo-600 rounded-xl flex items-center justify-center shrink-0">
+                      <div className="w-10 h-10 sm:w-12 sm:h-12 bg-primary-50 text-primary-600 rounded-xl flex items-center justify-center shrink-0">
                         <User size={20} />
                       </div>
                       <div className="min-w-0 flex-1">
@@ -6565,7 +6565,7 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                                       <span className="text-[9px] text-slate-500 font-medium block">
                                         Macallin: {teacher ? teacher.fullName : 'No Teacher'}
                                       </span>
-                                      <span className="text-[9px] text-indigo-600 font-mono font-bold block">
+                                      <span className="text-[9px] text-primary-600 font-mono font-bold block">
                                         Qolka: {rm ? rm.roomNumber : 'N/A'} | {cs.startTime} - {cs.endTime}
                                       </span>
                                       <span className="text-[8px] text-slate-400 font-bold uppercase block leading-tight">
@@ -7295,7 +7295,7 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
 
               <div className="flex justify-end gap-2 border-t border-slate-100 pt-4">
                 <button type="button" onClick={() => setActiveModal(null)} className="px-4 py-2 text-slate-500 hover:bg-slate-100 rounded-xl transition-all font-semibold cursor-pointer">Cancel</button>
-                <button type="submit" className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-4 py-2 rounded-xl transition-all shadow-sm cursor-pointer">
+                <button type="submit" className="bg-primary-600 hover:bg-primary-700 text-white font-bold px-4 py-2 rounded-xl transition-all shadow-sm cursor-pointer">
                   {selectedClassSession ? 'Update Session' : 'Create Session'}
                 </button>
               </div>
@@ -7556,7 +7556,7 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
             {/* Header */}
             <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between bg-white z-10 shrink-0">
               <div className="flex items-center gap-4">
-                <div className="w-12 h-12 bg-indigo-50 rounded-xl flex items-center justify-center text-indigo-600 shrink-0">
+                <div className="w-12 h-12 bg-primary-50 rounded-xl flex items-center justify-center text-primary-600 shrink-0">
                   <Edit2 size={24} />
                 </div>
                 <div>
@@ -7600,11 +7600,11 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                       if (marks >= 90) { grade = 'A+'; gColor = 'text-emerald-700 bg-emerald-50 border-emerald-200'; }
                       else if (marks >= 80) { grade = 'A'; gColor = 'text-teal-700 bg-teal-50 border-teal-200'; }
                       else if (marks >= 70) { grade = 'B'; gColor = 'text-blue-700 bg-blue-50 border-blue-200'; }
-                      else if (marks >= 60) { grade = 'C'; gColor = 'text-indigo-700 bg-indigo-50 border-indigo-200'; }
+                      else if (marks >= 60) { grade = 'C'; gColor = 'text-primary-700 bg-primary-50 border-primary-200'; }
                       else if (marks >= 50) { grade = 'D'; gColor = 'text-orange-700 bg-orange-50 border-orange-200'; }
 
                       return (
-                        <div key={student.id} className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between gap-4 hover:border-indigo-300 transition-colors">
+                        <div key={student.id} className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between gap-4 hover:border-primary-300 transition-colors">
                           <div className="flex items-center gap-4 flex-1">
                             <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center font-bold text-slate-500 text-sm">
                               {student.fullName.substring(0, 2).toUpperCase()}
@@ -7624,7 +7624,7 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                                 type="number" min="0" max="100"
                                 value={marks || ''}
                                 onChange={(e) => setMarksData({ ...marksData, [student.id]: Number(e.target.value) })}
-                                className="w-24 pl-4 pr-8 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-lg font-black text-center focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 transition-all text-slate-800"
+                                className="w-24 pl-4 pr-8 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-lg font-black text-center focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-100 transition-all text-slate-800"
                                 placeholder="0"
                               />
                               <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold">%</span>
@@ -7644,7 +7644,7 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                 {(() => {
                   const values = Object.values(marksData) as number[];
                   const avg = values.length ? Math.round(values.reduce((a, b) => a + b, 0) / values.length) : 0;
-                  return <span>Class Average: <strong className="text-indigo-600 text-lg">{avg}%</strong></span>;
+                  return <span>Class Average: <strong className="text-primary-600 text-lg">{avg}%</strong></span>;
                 })()}
               </div>
               <div className="flex items-center gap-3">
@@ -7684,7 +7684,7 @@ doc.text((currentOrg?.name || '').toUpperCase(), 15, 23);
                     setSuccessMessage('Exam results saved and awaiting admin approval.');
                     setActiveModal(null);
                   }}
-                  className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-8 py-2.5 rounded-xl transition-all shadow-md hover:shadow-lg cursor-pointer"
+                  className="bg-primary-600 hover:bg-primary-700 text-white font-bold px-8 py-2.5 rounded-xl transition-all shadow-md hover:shadow-lg cursor-pointer"
                 >
                   Submit Scores
                 </button>

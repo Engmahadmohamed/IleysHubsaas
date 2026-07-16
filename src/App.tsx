@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useRoutes, Navigate, useLocation, useNavigate, Link } from 'react-router-dom';
 import { AppProvider, useApp } from './context/AppContext';
+import { generateThemeVars } from './lib/themeUtils';
 import SuperAdmin from './components/SuperAdmin';
 import SchoolAdmin from './components/SchoolAdmin';
 import ResultPortal from './components/ResultPortal';
@@ -269,7 +270,7 @@ function SuperAdminLoginLayout() {
 
 
 function AppContent() {
-  const { currentUser, loading } = useApp();
+  const { currentUser, currentOrg, loading } = useApp();
   const location = useLocation();
   const isPublicPortal =
     location.pathname === '/results' ||
@@ -328,7 +329,13 @@ function AppContent() {
     );
   }
 
-  return <RoutesContainer currentUser={currentUser} />;
+  const themeVars = generateThemeVars(currentOrg?.themeColor);
+
+  return (
+    <div style={themeVars} className="min-h-screen bg-slate-50">
+      <RoutesContainer currentUser={currentUser} />
+    </div>
+  );
 }
 
 function RoutesContainer({ currentUser }: { currentUser: any }) {

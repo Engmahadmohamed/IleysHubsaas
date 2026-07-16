@@ -77,7 +77,7 @@ export default function TeacherDetail() {
         <div className="md:col-span-9 space-y-4 text-center md:text-left">
           <div>
             <h1 className="text-2xl md:text-3xl font-sans font-extrabold text-slate-900 tracking-tight">{teacher.fullName}</h1>
-            <p className="text-sm text-indigo-600 font-bold tracking-wide uppercase mt-1">Professional Faculty Member</p>
+            <p className="text-sm text-primary-600 font-bold tracking-wide uppercase mt-1">Professional Faculty Member</p>
           </div>
 
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 pt-2">
@@ -177,7 +177,7 @@ export default function TeacherDetail() {
                     >
                       <div className="space-y-1">
                         <div className="flex items-center justify-between">
-                          <span className="text-[10px] font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-md uppercase font-mono">
+                          <span className="text-[10px] font-bold text-primary-700 bg-primary-50 px-2 py-0.5 rounded-md uppercase font-mono">
                             {cs.classCode}
                           </span>
                           <span className="text-[9px] font-bold text-slate-400 uppercase">
@@ -185,7 +185,7 @@ export default function TeacherDetail() {
                           </span>
                         </div>
                         <span className="font-bold text-sm text-slate-900 block pt-1">{sub?.name || 'Maaddo'}</span>
-                        <p className="text-[10px] text-indigo-600 font-mono font-semibold">
+                        <p className="text-[10px] text-primary-600 font-mono font-semibold">
                           {rm ? `Qolka: ${rm.roomNumber}` : 'Virtual/No Room'} | {cs.startTime} - {cs.endTime}
                         </p>
                       </div>

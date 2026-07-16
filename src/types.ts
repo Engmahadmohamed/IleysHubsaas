@@ -10,6 +10,7 @@ export interface Organization {
   logoUrl?: string;
   type: 'school' | 'quran' | 'both';
   status: 'active' | 'suspended' | 'expired';
+  themeColor?: string; // hex color e.g. '#4f46e5'
   createdAt: string;
 }
 
@@ -191,11 +192,11 @@ export interface StudentSearchResult {
   results: StudentExamSearchResultItem[];
   subjects: Subject[];
   orgName?: string;
+  themeColor?: string;
 }
 
 export interface StudentFeeSearchResult {
   student: Student;
   fees: FeeRecord[];
-}
 
 

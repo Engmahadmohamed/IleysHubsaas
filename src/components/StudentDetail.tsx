@@ -220,7 +220,7 @@ export default function StudentDetail() {
                     >
                       <div className="space-y-1">
                         <div className="flex items-center justify-between">
-                          <span className="text-[10px] font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-md uppercase font-mono">
+                          <span className="text-[10px] font-bold text-primary-700 bg-primary-50 px-2 py-0.5 rounded-md uppercase font-mono">
                             {cs.classCode}
                           </span>
                           <span className="text-[9px] font-bold text-slate-400 uppercase">
@@ -231,7 +231,7 @@ export default function StudentDetail() {
                         <p className="text-[10px] text-slate-500 font-medium">
                           Macallin: <strong className="text-slate-700">{teacher ? teacher.fullName : 'N/A'}</strong>
                         </p>
-                        <p className="text-[10px] text-indigo-600 font-mono font-semibold">
+                        <p className="text-[10px] text-primary-600 font-mono font-semibold">
                           {rm ? `Qolka: ${rm.roomNumber}` : 'Virtual/No Room'} | {cs.startTime} - {cs.endTime}
                         </p>
                       </div>

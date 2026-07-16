@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
+import { generateThemeVars } from '../lib/themeUtils';
 import { Student, StudentExamSearchResultItem } from '../types';
 import {
   Search, Printer, Award, BookOpen, User, ShieldCheck,
@@ -170,7 +171,7 @@ export default function ResultPortal() {
         }
       `}</style>
 
-      <div className="min-h-screen" style={{ background: '#f8fafc', fontFamily: 'Outfit, sans-serif' }}>
+      <div className="min-h-screen" style={{ ...generateThemeVars(studentData?.themeColor), background: '#f8fafc', fontFamily: 'Outfit, sans-serif' }}>
 
         {/* ── HEADER ─────────────────────────────────────────────────────── */}
         <div className="bg-white border-b border-slate-100 no-print" style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
@@ -179,8 +180,7 @@ export default function ResultPortal() {
             {/* Brand row */}
             <div className="flex items-center gap-3 mb-5">
               <div
-                className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
-                style={{ background: 'linear-gradient(135deg, #4f46e5, #6366f1)' }}
+                className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 bg-gradient-to-br from-primary-600 to-primary-500"
               >
                 <GraduationCap size={20} color="#fff" />
               </div>
@@ -191,7 +191,7 @@ export default function ResultPortal() {
               <div className="ml-auto">
                 <span
                   className="inline-flex items-center gap-1.5 text-[10px] font-bold px-3 py-1.5 rounded-full"
-                  style={{ background: '#eef2ff', color: '#4f46e5', border: '1px solid #c7d2fe' }}
+                  style={{ background: 'var(--theme-50)', color: 'var(--theme-600)', border: '1px solid var(--theme-200)' }}
                 >
                   <ShieldCheck size={11} /> Verified Portal
                 </span>
@@ -214,14 +214,13 @@ export default function ResultPortal() {
                   disabled={searching}
                   onChange={e => setInput(e.target.value.toUpperCase())}
                   placeholder="Geli Student ID  (tusaale: SII00001)"
-                  className="w-full pl-9 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-mono font-semibold text-slate-800 placeholder:text-slate-400 placeholder:font-normal focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 disabled:opacity-60 transition-all tracking-wider"
+                  className="w-full pl-9 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-mono font-semibold text-slate-800 placeholder:text-slate-400 placeholder:font-normal focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-100 disabled:opacity-60 transition-all tracking-wider"
                 />
               </div>
               <button
                 type="submit"
                 disabled={searching}
-                className="flex items-center gap-2 px-5 py-3 rounded-xl text-sm font-bold text-white cursor-pointer transition-all active:scale-95 disabled:opacity-50 shrink-0"
-                style={{ background: 'linear-gradient(135deg, #4f46e5, #6366f1)', boxShadow: '0 4px 12px rgba(99,102,241,0.35)' }}
+                className="flex items-center gap-2 px-5 py-3 rounded-xl text-sm font-bold text-white cursor-pointer transition-all active:scale-95 disabled:opacity-50 shrink-0 bg-gradient-to-br from-primary-600 to-primary-500 shadow-md shadow-primary-500/30"
               >
                 {searching ? <Loader2 size={15} className="animate-spin" /> : <Search size={15} />}
                 {searching ? 'Raadinaya…' : 'Search'}
@@ -262,14 +261,13 @@ export default function ResultPortal() {
               {/* ── STUDENT PROFILE CARD ─────────────────────────────── */}
               <div className="bg-white rounded-2xl border border-slate-100 card-shadow overflow-hidden result-in">
                 {/* Indigo top bar */}
-                <div className="h-1.5" style={{ background: 'linear-gradient(90deg, #4f46e5, #818cf8)' }} />
+                <div className="h-1.5 bg-gradient-to-r from-primary-600 to-primary-400" />
 
                 <div className="p-5">
                   <div className="flex items-center gap-4">
                     {/* Avatar */}
                     <div
-                      className="w-14 h-14 rounded-2xl flex items-center justify-center font-black text-xl text-white shrink-0 uppercase"
-                      style={{ background: 'linear-gradient(135deg, #4f46e5, #818cf8)', boxShadow: '0 4px 14px rgba(99,102,241,0.35)' }}
+                      className="w-14 h-14 rounded-2xl flex items-center justify-center shrink-0 shadow-lg shadow-indigo-500/35 bg-gradient-to-br from-indigo-500 to-indigo-400 text-white font-black text-xl uppercase"
                     >
                       {(student.fullName || '?').slice(0, 2)}
                     </div>
@@ -278,7 +276,7 @@ export default function ResultPortal() {
                       <div className="flex flex-wrap gap-3 mt-1">
                         <span className="flex items-center gap-1 text-xs font-semibold text-slate-400">
                           <Hash size={11} />
-                          <span className="font-mono text-indigo-600 font-bold">{student.studentId || student.id}</span>
+                          <span className="font-mono text-primary-600 font-bold">{student.studentId || student.id}</span>
                         </span>
                         {student.gender && (
                           <span className="flex items-center gap-1 text-xs text-slate-400 capitalize">
@@ -293,8 +291,8 @@ export default function ResultPortal() {
                     {/* Overall grade */}
                     {results.length > 0 && (
                       <div
-                        className="w-14 h-14 rounded-2xl flex items-center justify-center font-black text-xl shrink-0"
-                        style={{ background: g.bg, color: g.color, border: `2px solid ${g.border}` }}
+                        className="w-14 h-14 rounded-2xl flex items-center justify-center font-black text-xl shrink-0 border-2"
+                        style={{ background: g.bg, color: g.color, borderColor: g.border }}
                       >
                         {g.letter}
                       </div>
@@ -306,7 +304,7 @@ export default function ResultPortal() {
                 {results.length > 0 && (
                   <div className="grid grid-cols-4 border-t border-slate-100">
                     {[
-                      { label: 'Average', value: `${avg}%`, color: '#4f46e5' },
+                      { label: 'Average', value: `${avg}%`, color: 'var(--theme-600)' },
                       { label: 'Exams',   value: totalExams, color: '#0d9488' },
                       { label: 'Passed',  value: passCount, color: '#059669' },
                       { label: 'Highest', value: `${highest}%`, color: '#d97706' },
@@ -337,8 +335,7 @@ export default function ResultPortal() {
                   {/* Print button */}
                   <button
                     onClick={() => window.print()}
-                    className="no-print flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-xl cursor-pointer transition-all hover:opacity-80"
-                    style={{ background: '#fff', border: '1px solid #e2e8f0', color: '#475569', boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}
+                    className="no-print flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-xl cursor-pointer transition-all hover:opacity-80 bg-white border border-slate-200 text-slate-600 shadow-sm"
                   >
                     <Printer size={13} /> Print
                   </button>
@@ -350,16 +347,14 @@ export default function ResultPortal() {
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-2">
                     <div
-                      className="w-7 h-7 rounded-lg flex items-center justify-center"
-                      style={{ background: '#eef2ff' }}
+                      className="w-7 h-7 rounded-lg flex items-center justify-center bg-primary-50"
                     >
-                      <BookOpen size={14} style={{ color: '#4f46e5' }} />
+                      <BookOpen size={14} className="text-primary-600" />
                     </div>
                     <h3 className="text-sm font-bold text-slate-800">Exam Results</h3>
                   </div>
                   <span
-                    className="text-[10px] font-bold px-2.5 py-1 rounded-full"
-                    style={{ background: '#eef2ff', color: '#4f46e5', border: '1px solid #c7d2fe' }}
+                    className="px-3 py-1 text-xs font-bold rounded-lg font-mono tracking-wider bg-primary-50 text-primary-600 border border-primary-200"
                   >
                     {results.length} Exam{results.length !== 1 ? 's' : ''}
                   </span>
@@ -395,11 +390,11 @@ export default function ResultPortal() {
               {/* ── VERIFIED FOOTER ───────────────────────────────────── */}
               <div
                 className="flex items-start gap-3 px-4 py-3.5 rounded-xl result-in result-in-d3"
-                style={{ background: '#eef2ff', border: '1px solid #c7d2fe' }}
+                style={{ background: 'var(--theme-50)', border: '1px solid var(--theme-200)' }}
               >
-                <ShieldCheck size={16} style={{ color: '#4f46e5', marginTop: 1 }} className="shrink-0" />
+                <ShieldCheck size={16} className="text-primary-600 mt-0.5 shrink-0" />
                 <p className="text-[11px] text-slate-500 leading-relaxed">
-                  <strong className="text-indigo-600">Verified Academic Record.</strong>{' '}
+                  <strong className="text-primary-600">Verified Academic Record.</strong>{' '}
                   Official result from IleysHub School Management System.
                   Generated: {new Date().toLocaleDateString('en-US', { dateStyle: 'medium' })}.
                 </p>
@@ -412,9 +407,9 @@ export default function ResultPortal() {
             <div className="flex flex-col items-center justify-center py-20 text-center">
               <div
                 className="w-16 h-16 rounded-2xl flex items-center justify-center mb-4 card-shadow"
-                style={{ background: '#eef2ff' }}
+                style={{ background: 'var(--theme-50)' }}
               >
-                <Award size={28} style={{ color: '#4f46e5' }} />
+                <Award size={28} className="text-primary-600" />
               </div>
               <h3 className="text-base font-bold text-slate-700 mb-1">Check Your Results</h3>
               <p className="text-sm text-slate-400 max-w-xs">

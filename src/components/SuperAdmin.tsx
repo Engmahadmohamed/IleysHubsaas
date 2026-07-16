@@ -39,6 +39,7 @@ export default function SuperAdmin() {
   const [monthlySubscription, setMonthlySubscription] = useState(100);
   const [type, setType] = useState<'school' | 'quran' | 'both'>('school');
   const [status, setStatus] = useState<'active' | 'suspended' | 'expired'>('active');
+  const [themeColor, setThemeColor] = useState<string>('#4f46e5');
   const [modalError, setModalError] = useState<string | null>(null);
   const [modalLoading, setModalLoading] = useState(false);
 
@@ -53,6 +54,7 @@ export default function SuperAdmin() {
     setMonthlySubscription(100);
     setType('school');
     setStatus('active');
+    setThemeColor('#4f46e5');
     setModalError(null);
     setModalLoading(false);
     setIsAddModalOpen(true);
@@ -68,6 +70,7 @@ export default function SuperAdmin() {
     setMonthlySubscription(org.monthlySubscription);
     setType(org.type);
     setStatus(org.status);
+    setThemeColor(org.themeColor || '#4f46e5');
     setIsEditModalOpen(true);
   };
 
@@ -77,7 +80,7 @@ export default function SuperAdmin() {
     setModalError(null);
     try {
       await addOrganization({
-        name, ownerName, email, location, monthlySubscription, type, status, logoUrl
+        name, ownerName, email, location, monthlySubscription, type, status, logoUrl, themeColor
       }, adminPassword);
       setIsAddModalOpen(false);
     } catch (err: any) {
@@ -92,7 +95,7 @@ export default function SuperAdmin() {
     e.preventDefault();
     if (editingOrg) {
       updateOrganization(editingOrg.id, {
-        name, ownerName, email, location, monthlySubscription, type, status, logoUrl
+        name, ownerName, email, location, monthlySubscription, type, status, logoUrl, themeColor
       });
       setIsEditModalOpen(false);
       setEditingOrg(null);
@@ -528,6 +531,50 @@ export default function SuperAdmin() {
                     <option value="expired">Expired</option>
                   </select>
                 </div>
+                <div className="col-span-2">
+                  <label className="block text-xs font-semibold text-slate-500 mb-2">Brand Color (Theme) — Dooro midab u gaar ah iskuulka</label>
+                  <div className="flex items-center gap-3">
+                    <div className="relative">
+                      <input
+                        type="color"
+                        value={themeColor}
+                        onChange={(e) => setThemeColor(e.target.value)}
+                        className="w-12 h-12 rounded-xl border-2 border-slate-200 cursor-pointer p-0.5 bg-white"
+                        title="Pick a custom color"
+                      />
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <div className="flex items-center gap-2">
+                        <div className="w-6 h-6 rounded-lg border border-slate-200 shrink-0" style={{ backgroundColor: themeColor }} />
+                        <span className="text-xs font-mono font-bold text-slate-700 uppercase">{themeColor}</span>
+                      </div>
+                      <p className="text-[10px] text-slate-400">Dooro midab kasta oo aad rabto — waxaa uu qaadanayaa dhammaan system-ka iskuulkan.</p>
+                    </div>
+                    {/* Quick presets */}
+                    <div className="ml-auto flex gap-1.5 flex-wrap justify-end">
+                      {[
+                        { label: 'Indigo', hex: '#4f46e5' },
+                        { label: 'Blue', hex: '#2563eb' },
+                        { label: 'Emerald', hex: '#059669' },
+                        { label: 'Rose', hex: '#e11d48' },
+                        { label: 'Violet', hex: '#7c3aed' },
+                        { label: 'Orange', hex: '#ea580c' },
+                        { label: 'Slate', hex: '#475569' },
+                      ].map(({ label, hex }) => (
+                        <button
+                          key={hex}
+                          type="button"
+                          title={label}
+                          onClick={() => setThemeColor(hex)}
+                          className={`w-7 h-7 rounded-full border-2 transition-all hover:scale-110 cursor-pointer ${
+                            themeColor === hex ? 'border-slate-800 scale-110 shadow-md' : 'border-white shadow-sm'
+                          }`}
+                          style={{ backgroundColor: hex }}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                </div>
               </div>
 
               <div className="flex justify-end gap-2 border-t border-slate-100 pt-4">
@@ -656,6 +703,50 @@ export default function SuperAdmin() {
                     <option value="suspended">Suspended</option>
                     <option value="expired">Expired</option>
                   </select>
+                </div>
+                <div className="col-span-3">
+                  <label className="block text-xs font-semibold text-slate-500 mb-2">Brand Color (Theme) — Dooro midab u gaar ah iskuulka</label>
+                  <div className="flex items-center gap-3">
+                    <div className="relative">
+                      <input
+                        type="color"
+                        value={themeColor}
+                        onChange={(e) => setThemeColor(e.target.value)}
+                        className="w-12 h-12 rounded-xl border-2 border-slate-200 cursor-pointer p-0.5 bg-white"
+                        title="Pick a custom color"
+                      />
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <div className="flex items-center gap-2">
+                        <div className="w-6 h-6 rounded-lg border border-slate-200 shrink-0" style={{ backgroundColor: themeColor }} />
+                        <span className="text-xs font-mono font-bold text-slate-700 uppercase">{themeColor}</span>
+                      </div>
+                      <p className="text-[10px] text-slate-400">Dooro midab kasta oo aad rabto — waxaa uu qaadanayaa dhammaan system-ka iskuulkan.</p>
+                    </div>
+                    {/* Quick presets */}
+                    <div className="ml-auto flex gap-1.5 flex-wrap justify-end">
+                      {[
+                        { label: 'Indigo', hex: '#4f46e5' },
+                        { label: 'Blue', hex: '#2563eb' },
+                        { label: 'Emerald', hex: '#059669' },
+                        { label: 'Rose', hex: '#e11d48' },
+                        { label: 'Violet', hex: '#7c3aed' },
+                        { label: 'Orange', hex: '#ea580c' },
+                        { label: 'Slate', hex: '#475569' },
+                      ].map(({ label, hex }) => (
+                        <button
+                          key={hex}
+                          type="button"
+                          title={label}
+                          onClick={() => setThemeColor(hex)}
+                          className={`w-7 h-7 rounded-full border-2 transition-all hover:scale-110 cursor-pointer ${
+                            themeColor === hex ? 'border-slate-800 scale-110 shadow-md' : 'border-white shadow-sm'
+                          }`}
+                          style={{ backgroundColor: hex }}
+                        />
+                      ))}
+                    </div>
+                  </div>
                 </div>
               </div>
 

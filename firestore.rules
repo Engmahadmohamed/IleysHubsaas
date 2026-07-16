@@ -92,7 +92,8 @@ service cloud.firestore {
              data.status in ['active', 'suspended', 'expired'] &&
              data.monthlySubscription is number && data.monthlySubscription >= 0 &&
              data.createdAt is string &&
-             (!('logoUrl' in data) || data.logoUrl is string || data.logoUrl == null);
+             (!('logoUrl' in data) || data.logoUrl is string || data.logoUrl == null) &&
+             (!('themeColor' in data) || data.themeColor is string || data.themeColor == null);
     }
 
     function isValidStudent(data) {
